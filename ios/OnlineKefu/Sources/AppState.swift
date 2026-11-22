@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published var loadingMessages = false
     @Published var sending = false
     @Published var errorText: String?
+    private var errorDismissToken = 0
 
     private var convCursor: Int?
     private var msgCursor: Int?
@@ -28,6 +29,46 @@ final class AppState: ObservableObject {
     init() {
         api.baseURL = AppSettings.serverURL
         api.token = AppSettings.token
+    }
+
+    // MARK: - 错误与未读
+
+    /// 统一处理错误：**用户切页/重进导致 URLSession 取消（-999 cancelled）不是故障**，
+    /// 以前会把它当网络错误弹红条，于是会话列表顶上一直挂着 "cancelled"（2026-11-22 实拍）。
+    func handle(_ error: Error) {
+        if Self.isCancellation(error) { return }
+        errorText = (error as? APIError)?.message ?? error.localizedDescription
+        scheduleErrorDismiss()
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+        if error is CancellationError { return true }
+        let text = ns.localizedDescription.lowercased()
+        return text == "cancelled" || text == "canceled" || text.contains("已取消")
+    }
+
+    /// 红条 6 秒自动消失（也支持点一下手动清）
+    private func scheduleErrorDismiss() {
+        errorDismissToken &+= 1
+        let token = errorDismissToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, self.errorDismissToken == token else { return }
+            self.errorText = nil
+        }
+    }
+
+    func clearError() {
+        errorDismissToken &+= 1
+        errorText = nil
+    }
+
+    /// 打开会话即视为已读（网页端也是本地水位，不需要后端接口）
+    func markRead(_ conversation: Conversation) {
+        guard let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
+              conversations[idx].unreadCount > 0 else { return }
+        conversations[idx].unreadCount = 0
     }
 
     // MARK: - 登录
@@ -46,7 +87,7 @@ final class AppState: ObservableObject {
             if selectedAccount == nil { selectedAccount = accounts.first }
             await reloadAll()
         } catch {
-            errorText = (error as? APIError)?.message ?? error.localizedDescription
+            handle(error)
         }
     }
 
@@ -86,7 +127,7 @@ final class AppState: ObservableObject {
         do {
             accounts = try await api.accounts()
         } catch {
-            errorText = (error as? APIError)?.message ?? error.localizedDescription
+            handle(error)
         }
     }
 
@@ -110,7 +151,7 @@ final class AppState: ObservableObject {
             conversations = page.conversations
             convCursor = page.nextCursor
         } catch {
-            errorText = (error as? APIError)?.message ?? error.localizedDescription
+            handle(error)
         }
     }
 
@@ -121,7 +162,7 @@ final class AppState: ObservableObject {
             conversations += page.conversations
             convCursor = page.nextCursor
         } catch {
-            errorText = (error as? APIError)?.message ?? error.localizedDescription
+            handle(error)
         }
     }
 
@@ -145,7 +186,7 @@ final class AppState: ObservableObject {
             }
             msgCursor = page.nextCursor
         } catch {
-            errorText = (error as? APIError)?.message ?? error.localizedDescription
+            handle(error)
         }
     }
 
@@ -168,7 +209,7 @@ final class AppState: ObservableObject {
                                       text: text)
         } catch {
             messages.removeAll { $0.messageId == local.messageId }
-            errorText = (error as? APIError)?.message ?? error.localizedDescription
+            handle(error)
         }
     }
 
