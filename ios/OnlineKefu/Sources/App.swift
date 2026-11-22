@@ -35,6 +35,13 @@ struct MainTabView: View {
             ConversationListView()
                 .tabItem { Label("消息", systemImage: "bubble.left.and.bubble.right.fill") }
 
+            // 网页版：内嵌整个后台 Web 端，商品/订单/卡券/智能客服等全部功能都在这里
+            WebConsoleView(serverURL: AppSettings.serverURL,
+                           token: state.token,
+                           refreshToken: state.refreshToken,
+                           username: state.username)
+                .tabItem { Label("网页版", systemImage: "safari.fill") }
+
             AccountListView()
                 .tabItem { Label("账号", systemImage: "person.2.circle.fill") }
 
