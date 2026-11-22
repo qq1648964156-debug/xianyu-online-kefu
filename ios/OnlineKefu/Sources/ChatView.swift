@@ -12,7 +12,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             messageList
             if let err = state.errorText {
-                ErrorBanner(text: err)
+                ErrorBanner(text: err, onDismiss: { state.clearError() })
             }
             composer
         }
@@ -37,6 +37,7 @@ struct ChatView: View {
             }
         }
         .task {
+            state.markRead(conversation)          // 红点随打开消失，和网页端一致
             await state.loadMessages(conversation: conversation)
             await state.loadQuickPhrasesIfNeeded()
         }
