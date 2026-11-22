@@ -33,7 +33,6 @@ struct WebConsoleView: View {
                             .tint(Theme.accent)
                     }
                 }
-                bottomBar
             }
             .navigationTitle(model.title.isEmpty ? "网页版" : model.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -48,6 +47,7 @@ struct WebConsoleView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button { model.goForward() } label: { Label("前进", systemImage: "chevron.forward") }
                         Button { model.reload() } label: { Label("刷新", systemImage: "arrow.clockwise") }
                         Button { model.goHome(serverURL) } label: { Label("回到首页", systemImage: "house") }
                         Button {
@@ -62,29 +62,6 @@ struct WebConsoleView: View {
         .navigationViewStyle(.stack)
     }
 
-    private var bottomBar: some View {
-        HStack(spacing: 0) {
-            barButton("chevron.left", "后退", enabled: model.canGoBack) { model.goBack() }
-            barButton("chevron.right", "前进", enabled: model.canGoForward) { model.goForward() }
-            barButton("arrow.clockwise", "刷新", enabled: true) { model.reload() }
-            barButton("house", "首页", enabled: true) { model.goHome(serverURL) }
-        }
-        .padding(.vertical, 6)
-        .background(Color(uiColor: .secondarySystemBackground))
-        .overlay(Divider(), alignment: .top)
-    }
-
-    private func barButton(_ icon: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: icon).font(.system(size: 16))
-                Text(label).font(.system(size: 10))
-            }
-            .frame(maxWidth: .infinity)
-            .foregroundColor(enabled ? Theme.accent : .gray.opacity(0.4))
-        }
-        .disabled(!enabled)
-    }
 }
 
 final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
@@ -148,7 +125,14 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             },
         ]
 
-        wv.load(URLRequest(url: serverURL))
+        // 带 app_embed=1：网页端据此隐藏自带的侧边栏/顶栏/标签栏，
+        // 否则外壳与网页两套导航叠在一起，内容被挤压（2026-11-22 iPhone 实拍）。
+        var comps = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
+        var items = comps?.queryItems ?? []
+        items.removeAll { $0.name == "app_embed" }
+        items.append(URLQueryItem(name: "app_embed", value: "1"))
+        comps?.queryItems = items
+        wv.load(URLRequest(url: comps?.url ?? serverURL))
         return wv
     }
 
