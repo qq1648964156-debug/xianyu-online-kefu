@@ -9,7 +9,7 @@ struct ConversationListView: View {
         NavigationView {
             VStack(spacing: 0) {
                 if let err = state.errorText {
-                    ErrorBanner(text: err).padding(.top, 6)
+                    ErrorBanner(text: err, onDismiss: { state.clearError() }).padding(.top, 6)
                 }
                 content
             }
