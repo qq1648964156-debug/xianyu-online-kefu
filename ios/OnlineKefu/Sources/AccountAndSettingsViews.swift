@@ -117,6 +117,13 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(header: Text("输入"), footer: Text("开启后，聊天输入框会出现麦克风按钮，说话直接转成文字。属于实验功能：若开启后出现卡顿，请关闭本开关。")) {
+                    Toggle("语音输入（实验）", isOn: Binding(
+                        get: { AppSettings.speechEnabled },
+                        set: { AppSettings.speechEnabled = $0 }
+                    ))
+                }
+
                 Section(header: Text("关于")) {
                     HStack {
                         Text("版本")
