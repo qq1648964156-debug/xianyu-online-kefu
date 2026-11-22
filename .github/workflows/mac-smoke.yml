@@ -1,0 +1,8 @@
+name: MacSmoke
+on:
+  workflow_dispatch:
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - run: sw_vers && xcodebuild -version
