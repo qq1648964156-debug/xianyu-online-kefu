@@ -195,3 +195,91 @@ struct QuickPhrase: Decodable, Identifiable {
     let title: String
     let content: String
 }
+
+
+// MARK: - 买家订单 / 咨询商品（聊天页「会话信息」用）
+
+struct CustomerOrder: Decodable, Identifiable {
+    let orderNo: String
+    let itemTitle: String
+    let skuInfo: String
+    let amount: String
+    let status: String
+    let quantity: Int
+    let placedAt: String
+    let deliveryMethod: String
+    let refundStatusDesc: String?
+
+    var id: String { orderNo }
+    var statusText: String {
+        if let r = refundStatusDesc, !r.isEmpty { return "\(status) · \(r)" }
+        return status
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case orderNo = "order_no"
+        case itemTitle = "item_title"
+        case skuInfo = "sku_info"
+        case amount, status, quantity
+        case placedAt = "placed_at"
+        case deliveryMethod = "delivery_method"
+        case refundStatusDesc = "refund_status_desc"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        orderNo = (try? c.decode(String.self, forKey: .orderNo)) ?? ""
+        itemTitle = (try? c.decode(String.self, forKey: .itemTitle)) ?? ""
+        skuInfo = (try? c.decode(String.self, forKey: .skuInfo)) ?? ""
+        amount = (try? c.decode(String.self, forKey: .amount)) ?? ""
+        status = (try? c.decode(String.self, forKey: .status)) ?? ""
+        quantity = (try? c.decode(Int.self, forKey: .quantity)) ?? 0
+        placedAt = (try? c.decode(String.self, forKey: .placedAt)) ?? ""
+        deliveryMethod = (try? c.decode(String.self, forKey: .deliveryMethod)) ?? ""
+        refundStatusDesc = try? c.decodeIfPresent(String.self, forKey: .refundStatusDesc)
+    }
+}
+
+struct ConsultSku: Decodable, Identifiable {
+    let skuId: String
+    let name: String
+    let price: String
+    let stock: String?
+
+    var id: String { skuId.isEmpty ? name : skuId }
+
+    enum CodingKeys: String, CodingKey { case skuId, name, price, stock }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        skuId = (try? c.decode(String.self, forKey: .skuId)) ?? ""
+        name = (try? c.decode(String.self, forKey: .name)) ?? ""
+        price = (try? c.decode(String.self, forKey: .price)) ?? ""
+        stock = try? c.decodeIfPresent(String.self, forKey: .stock)
+    }
+}
+
+struct ConsultItem: Decodable {
+    let itemId: String
+    let title: String
+    let image: String
+    let price: String
+    let specLines: [String]
+    let skus: [ConsultSku]
+    let quantity: String?
+
+    enum CodingKeys: String, CodingKey {
+        case itemId, title, image, price, specLines, skus, quantity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        itemId = (try? c.decode(String.self, forKey: .itemId)) ?? ""
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        image = (try? c.decode(String.self, forKey: .image)) ?? ""
+        price = (try? c.decode(String.self, forKey: .price)) ?? ""
+        specLines = (try? c.decode([String].self, forKey: .specLines)) ?? []
+        skus = (try? c.decode([ConsultSku].self, forKey: .skus)) ?? []
+        quantity = try? c.decodeIfPresent(String.self, forKey: .quantity)
+    }
+}
