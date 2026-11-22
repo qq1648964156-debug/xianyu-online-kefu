@@ -2,89 +2,104 @@ import Foundation
 
 /// 已读水位（本地）
 ///
-/// 为什么需要：后端没有"标记已读"接口（网页端也是本地水位），
-/// 不记水位的话每次刷新都会把后端返回的未读数重新显示成红点。
+/// 后端没有"标记已读"接口（网页端也是本地水位），所以必须由客户端记住：
+/// 「这个会话我已经读到哪儿了」，否则每次刷新都会把后端返回的未读数重新画成红点。
 ///
-/// ⚠️ 存储用 JSON(Data) 而不是 `UserDefaults.dictionary(forKey:)`：
-/// 后者返回 `[String: Any]`，值是 NSNumber，`as? [String: Double]` 的桥接行为
-/// 在真机上并不可靠 —— 一旦读回失败就变成"水位永远为空"，红点刷新后又出现
-/// （2026-11-23 用户反馈"气泡还是没解决"）。JSON 编解码没有这个歧义。
+/// v3 起记录 **时间戳 + 最后一条消息摘要** 两个维度：
+///   - 时间戳做兜底（容忍 60 秒漂移，避免后端时间戳刷新时微调导致判断失效）；
+///   - 摘要相同 ⇒ 没有新的买家消息 ⇒ 一定算已读（这是最强判据）。
 enum ReadStore {
-    private static let key = "xy.readMarks.v2"
-    private static let legacyKey = "xy.readMarks"
-    private static let lock = NSLock()
-    /// 缓存，避免每次列表刷新都读一次磁盘
-    private static var cache: [String: Double]?
+    struct Mark: Codable {
+        var time: Double
+        var summary: String
+    }
 
-    private static func load() -> [String: Double] {
+    private static let key = "xy.readMarks.v3"
+    private static let legacyKeys = ["xy.readMarks.v2", "xy.readMarks"]
+    private static let lock = NSLock()
+    private static var cache: [String: Mark]?
+
+    private static func load() -> [String: Mark] {
         if let cache { return cache }
-        var map: [String: Double] = [:]
+        var map: [String: Mark] = [:]
         if let data = UserDefaults.standard.data(forKey: key),
-           let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
+           let decoded = try? JSONDecoder().decode([String: Mark].self, from: data) {
             map = decoded
-        } else if let legacy = UserDefaults.standard.dictionary(forKey: legacyKey) {
-            // 兼容旧版本写入的 NSNumber 字典
-            for (k, v) in legacy {
-                if let d = v as? Double { map[k] = d }
-                else if let n = v as? NSNumber { map[k] = n.doubleValue }
+        } else {
+            // 兼容 v2（[String: Double]）与 v1（NSNumber 字典）
+            if let data = UserDefaults.standard.data(forKey: "xy.readMarks.v2"),
+               let old = try? JSONDecoder().decode([String: Double].self, from: data) {
+                for (k, v) in old { map[k] = Mark(time: v, summary: "") }
+            } else if let old = UserDefaults.standard.dictionary(forKey: "xy.readMarks") {
+                for (k, v) in old {
+                    if let n = v as? NSNumber { map[k] = Mark(time: n.doubleValue, summary: "") }
+                }
             }
         }
         cache = map
         return map
     }
 
-    private static func save(_ map: [String: Double]) {
+    private static func save(_ map: [String: Mark]) {
         cache = map
         if let data = try? JSONEncoder().encode(map) {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
 
-    private static func id(account: String, cid: String) -> String { "\(account)|\(cid)" }
+    private static func id(_ account: String, _ cid: String) -> String { "\(account)|\(cid)" }
 
-    /// 记录"读到哪条消息"（时间戳毫秒）
-    static func mark(account: String, cid: String, time: Double) {
-        guard time > 0 else { return }
+    static func mark(account: String, cid: String, time: Double, summary: String) {
+        guard time > 0 || !summary.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }
         var map = load()
-        let k = id(account: account, cid: cid)
-        if time > (map[k] ?? 0) { map[k] = time; save(map) }
+        let k = id(account, cid)
+        let old = map[k]
+        // 只在"更靠后"时更新，避免把已读进度覆盖回旧值
+        if old == nil || time >= old!.time || (!summary.isEmpty && summary != old!.summary) {
+            map[k] = Mark(time: max(time, old?.time ?? 0), summary: summary)
+            save(map)
+        }
     }
 
-    /// 一键已读
     static func markAll(account: String, conversations: [Conversation]) {
         lock.lock(); defer { lock.unlock() }
-        var map = load()
-        var changed = false
+        var map = load(); var changed = false
         for c in conversations {
-            let k = id(account: account, cid: c.cid)
-            if c.lastMessageTime > (map[k] ?? 0) { map[k] = c.lastMessageTime; changed = true }
+            let k = id(account, c.cid)
+            if map[k] == nil || c.lastMessageTime >= (map[k]?.time ?? 0) {
+                map[k] = Mark(time: c.lastMessageTime, summary: c.lastMessageSummary)
+                changed = true
+            }
         }
         if changed { save(map) }
     }
 
-    /// 按水位把未读清零
-    static func apply(account: String, conversations: [Conversation]) -> [Conversation] {
+    /// 这个会话是否已读（**渲染层与刷新层都调用它**，双保险）
+    static func isRead(account: String, cid: String, time: Double, summary: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        let map = load()
-        guard !map.isEmpty else { return conversations }
-        return conversations.map { c in
+        guard let m = load()[id(account, cid)] else { return false }
+        if !m.summary.isEmpty, m.summary == summary { return true }        // 摘要没变 = 没新消息
+        return time <= m.time + 60_000                                    // 容忍 60s 时间戳漂移
+    }
+
+    static func apply(account: String, conversations: [Conversation]) -> [Conversation] {
+        conversations.map { c in
             guard c.unreadCount > 0 else { return c }
-            let mark = map[id(account: account, cid: c.cid)] ?? 0
-            guard mark > 0, mark >= c.lastMessageTime else { return c }
+            guard isRead(account: account, cid: c.cid,
+                         time: c.lastMessageTime, summary: c.lastMessageSummary) else { return c }
             var copy = c
             copy.unreadCount = 0
             return copy
         }
     }
 
-    /// 诊断用：已记录多少条会话
     static func count() -> Int { load().count }
 
     static func clearAll() {
         lock.lock(); defer { lock.unlock() }
         cache = [:]
         UserDefaults.standard.removeObject(forKey: key)
-        UserDefaults.standard.removeObject(forKey: legacyKey)
+        for k in legacyKeys { UserDefaults.standard.removeObject(forKey: k) }
     }
 }
