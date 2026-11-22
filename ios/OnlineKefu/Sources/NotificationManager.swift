@@ -1,0 +1,129 @@
+import SwiftUI
+import UserNotifications
+import BackgroundTasks
+
+/// 通知与后台刷新
+///
+/// 前提：TrollStore 安装的是**未签名**包，没有 APNs 权限，所以做不了系统级远程推送。
+/// 这里做三件在未签名包上确实可行的事：
+///   1. 前台/后台的**本地通知**（App 还在跑的时候）；
+///   2. **未读角标**（图标上的数字）；
+///   3. **BGAppRefreshTask** 定时静默拉取（iOS 只保证"会跑"，不保证频率，可能几十分钟一次）。
+/// 锁屏/杀进程后的推送请用后台自带的 Bark 渠道。
+final class NotificationManager {
+    static let shared = NotificationManager()
+    private let center = UNUserNotificationCenter.current()
+    /// 已经通知过的消息指纹（cid + 最后一条消息时间），避免同一条反复弹
+    private var notified: Set<String> = []
+
+    func requestAuthorization() {
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error {
+                print("[通知] 授权失败:", error.localizedDescription)
+            } else {
+                print("[通知] 授权状态:", granted)
+            }
+        }
+    }
+
+    /// 角标：iOS 16+ 用 setBadgeCount，老系统用 applicationIconBadgeNumber
+    func updateBadge(_ count: Int) {
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                UNUserNotificationCenter.current().setBadgeCount(max(0, count)) { _ in }
+            } else {
+                UIApplication.shared.applicationIconBadgeNumber = max(0, count)
+            }
+        }
+    }
+
+    /// 有新未读时弹本地通知（同一会话同一条消息只弹一次）
+    func handleConversations(_ conversations: [Conversation], accountName: String) {
+        let unread = conversations.filter { $0.unreadCount > 0 }
+        updateBadge(unread.reduce(0) { $0 + $1.unreadCount })
+
+        for conv in unread {
+            let fingerprint = "\(conv.cid)-\(Int(conv.lastMessageTime))"
+            guard !notified.contains(fingerprint) else { continue }
+            notified.insert(fingerprint)
+            // 控制集合大小，避免长期运行无限增长
+            if notified.count > 500 { notified.removeAll() }
+
+            let content = UNMutableNotificationContent()
+            content.title = conv.otherUserName.isEmpty ? "新消息" : conv.otherUserName
+            let summary = conv.lastMessageSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+            content.body = summary.isEmpty ? "收到一条新消息" : summary
+            content.sound = .default
+            content.badge = NSNumber(value: unread.reduce(0) { $0 + $1.unreadCount })
+            content.threadIdentifier = conv.cid
+            if !accountName.isEmpty {
+                content.subtitle = accountName
+            }
+            let request = UNNotificationRequest(identifier: fingerprint,
+                                                content: content,
+                                                trigger: nil)  // nil = 立即
+            center.add(request)
+        }
+    }
+
+    /// 进后台前清掉角标（可选：如果你希望"打开 App 即已读"）
+    func clearBadge() {
+        updateBadge(0)
+        notified.removeAll()
+    }
+}
+
+/// 负责：通知前台展示样式 + 注册后台刷新任务
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    static let bgTaskID = "com.xianyu.onlinekefu.refresh"
+
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        NotificationManager.shared.requestAuthorization()
+
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.bgTaskID, using: nil) { task in
+            guard let refresh = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleBackgroundRefresh(refresh)
+        }
+        scheduleBackgroundRefresh()
+        return true
+    }
+
+    /// App 在前台时也把通知显示成横幅（默认前台不显示）
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        scheduleBackgroundRefresh()
+    }
+
+    private func scheduleBackgroundRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: Self.bgTaskID)
+        // 系统只把它当"不早于这个时间"，实际何时跑由 iOS 决定
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // 未签名包可能不被允许注册后台任务，失败不影响前台使用
+            print("[后台刷新] 调度失败:", error.localizedDescription)
+        }
+    }
+
+    private func handleBackgroundRefresh(_ task: BGAppRefreshTask) {
+        scheduleBackgroundRefresh()  // 链式续期
+        let work = Task {
+            await AppState.shared.refreshInBackground()
+            task.setTaskCompleted(success: true)
+        }
+        task.expirationHandler = {
+            work.cancel()
+        }
+    }
+}
