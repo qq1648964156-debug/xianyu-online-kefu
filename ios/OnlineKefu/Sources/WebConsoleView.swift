@@ -25,11 +25,13 @@ struct WebConsoleView: View {
         NavigationView {
             VStack(spacing: 0) {
                 ZStack(alignment: .top) {
+                    Color.clear
                     WebViewContainer(model: model,
                                      serverURL: serverURL,
                                      token: token,
                                      refreshToken: refreshToken,
                                      username: username)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if model.loading {
                         ProgressView(value: model.progress)
                             .progressViewStyle(.linear)
@@ -260,10 +262,29 @@ private struct WebViewContainer: UIViewRepresentable {
     let refreshToken: String?
     let username: String?
 
-    func makeUIView(context: Context) -> WKWebView {
-        model.ensureWebView(serverURL: serverURL, token: token,
-                            refreshToken: refreshToken, username: username)
+    /// 用容器 + AutoLayout 把 WKWebView 钉满。
+    /// 直接返回 WKWebView 时 SwiftUI 会按它的 intrinsicContentSize 分配高度，
+    /// 结果只占了屏幕上半截、下面空一大片（2026-11-22 用户实拍）。
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .systemBackground
+
+        let wv = model.ensureWebView(serverURL: serverURL, token: token,
+                                     refreshToken: refreshToken, username: username)
+        wv.translatesAutoresizingMaskIntoConstraints = false
+        wv.setContentHuggingPriority(.defaultLow, for: .vertical)
+        wv.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        wv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        wv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        container.addSubview(wv)
+        NSLayoutConstraint.activate([
+            wv.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            wv.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            wv.topAnchor.constraint(equalTo: container.topAnchor),
+            wv.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
