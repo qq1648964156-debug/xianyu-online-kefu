@@ -82,16 +82,22 @@ final class AppState: ObservableObject {
     }
 
     /// 打开会话即视为已读（网页端也是本地水位，不需要后端接口）
-    func markRead(_ conversation: Conversation) {
-        guard let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
-              conversations[idx].unreadCount > 0 else { return }
-        conversations[idx].unreadCount = 0
-        if let account = selectedAccount {
-            ReadStore.mark(account: account.accountId,
-                           cid: conversation.cid,
-                           time: conversation.lastMessageTime)
+    /// 进入会话即记录已读水位
+    ///
+    /// ⚠️ 关键：**不管当前 unreadCount 是不是 0，都要写水位**。
+    /// 1.4.0 的实现里带了个 `unreadCount > 0` 的 guard：如果这个会话刚刚被本地清零过（或本来就是 0），
+    /// 就不写水位；而后端没有"标记已读"接口，下次刷新列表照样返回未读 1 → 红点又冒出来
+    /// （2026-11-23 用户反馈"气泡一刷新就出来"）。
+    /// `latestMessageTime` 用进入会话后真正加载到的最新消息时间，避免列表里的时间戳偏旧。
+    func markRead(_ conversation: Conversation, latestMessageTime: Double? = nil) {
+        guard let account = selectedAccount else { return }
+        let time = max(conversation.lastMessageTime, latestMessageTime ?? 0)
+        ReadStore.mark(account: account.accountId, cid: conversation.cid, time: time)
+        if let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
+           conversations[idx].unreadCount > 0 {
+            conversations[idx].unreadCount = 0
+            NotificationManager.shared.updateBadge(totalUnread)
         }
-        NotificationManager.shared.updateBadge(totalUnread)
     }
 
     /// 一键已读：把当前列表全部置为已读（本地水位持久化，刷新后也不会回来）
