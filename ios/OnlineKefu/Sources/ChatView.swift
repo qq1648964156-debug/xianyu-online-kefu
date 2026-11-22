@@ -191,7 +191,9 @@ struct ChatView: View {
                     .background(Color(uiColor: .secondarySystemBackground))
                     .cornerRadius(18)
 
-                // 语音转文字：点一下开始说，再点一下停；识别文本实时追加到输入框
+                // 语音转文字（实验功能）：默认隐藏，需在「设置 → 语音输入」里手动开启。
+                // 1.6.0 曾在部分设备上因音频初始化卡死界面，所以默认关闭，只给需要的人开。
+                if AppSettings.speechEnabled {
                 Button {
                     if !speech.isRecording {
                         draftBeforeSpeech = draft
@@ -203,6 +205,7 @@ struct ChatView: View {
                         .foregroundColor(speech.isRecording ? .red : Theme.accent)
                 }
                 .accessibilityLabel(speech.isRecording ? "停止语音输入" : "语音转文字")
+                }
 
                 Button(action: sendDraft) {
                     Image(systemName: "arrow.up.circle.fill")
