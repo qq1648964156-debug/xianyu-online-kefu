@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct OnlineKefuApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var state = AppState.shared
+    @StateObject private var state = AppState()
 
     var body: some Scene {
         WindowGroup {
@@ -30,8 +30,6 @@ struct RootView: View {
 
 struct MainTabView: View {
     @EnvironmentObject var state: AppState
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var pollTask: Task<Void, Never>? = nil
 
     var body: some View {
         TabView {
@@ -51,26 +49,8 @@ struct MainTabView: View {
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
         }
-        .onChange(of: scenePhase) { phase in
-            if phase == .active {
-                startPolling()
-            } else {
-                pollTask?.cancel()
-                pollTask = nil
-            }
-        }
-        .onAppear { startPolling() }
-    }
-
-    /// 前台轮询：20 秒一次，静默（不闪 loading），有新消息就弹本地通知 + 更新角标
-    private func startPolling() {
-        pollTask?.cancel()
-        pollTask = Task {
-            while !Task.isCancelled {
-                await state.silentRefresh()
-                try? await Task.sleep(nanoseconds: 20 * 1_000_000_000)
-            }
-        }
+        // 不在这里轮询：`/conversations` 会实时打闲鱼接口，20 秒一轮会拖慢甚至触发平台风控
+        // （2026-11-22 1.3.0 装上后"其它功能全部报错"）。刷新交给：进页面 / 下拉 / 手动刷新。
     }
 }
 
