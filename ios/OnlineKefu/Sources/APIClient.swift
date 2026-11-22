@@ -167,6 +167,7 @@ struct EmptyData: Decodable {}
 enum AppSettings {
     private static let serverKey = "xy.serverURL"
     private static let tokenKey = "xy.token"
+    private static let refreshKey = "xy.refreshToken"
     private static let nameKey = "xy.username"
 
     static var serverURL: URL {
@@ -182,6 +183,12 @@ enum AppSettings {
         set { UserDefaults.standard.set(newValue, forKey: tokenKey) }
     }
 
+    /// 网页版 WebView 注入登录态要用到 refresh_token（否则 30 分钟后网页端掉登录）
+    static var refreshToken: String? {
+        get { UserDefaults.standard.string(forKey: refreshKey) }
+        set { UserDefaults.standard.set(newValue, forKey: refreshKey) }
+    }
+
     static var username: String? {
         get { UserDefaults.standard.string(forKey: nameKey) }
         set { UserDefaults.standard.set(newValue, forKey: nameKey) }
@@ -189,6 +196,7 @@ enum AppSettings {
 
     static func clearLogin() {
         UserDefaults.standard.removeObject(forKey: tokenKey)
+        UserDefaults.standard.removeObject(forKey: refreshKey)
         UserDefaults.standard.removeObject(forKey: nameKey)
     }
 }
