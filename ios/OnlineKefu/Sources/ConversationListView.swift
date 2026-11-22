@@ -85,7 +85,7 @@ struct ConversationListView: View {
             List {
                 ForEach(filtered) { conv in
                     NavigationLink(destination: ChatView(conversation: conv)) {
-                        ConversationRow(conversation: conv)
+                        ConversationRow(conversation: conv, isRead: state.isRead(conv))
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onAppear {
@@ -104,6 +104,8 @@ struct ConversationListView: View {
 
 struct ConversationRow: View {
     let conversation: Conversation
+    /// 已读判定（渲染层再压一次，防止刷新流程漏掉 apply 时红点复现）
+    var isRead: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -133,7 +135,7 @@ struct ConversationRow: View {
                         .cornerRadius(4)
                 }
             }
-            if conversation.unreadCount > 0 {
+            if conversation.unreadCount > 0 && !isRead {
                 Text("\(conversation.unreadCount)")
                     .font(.caption2.bold())
                     .foregroundColor(.white)
