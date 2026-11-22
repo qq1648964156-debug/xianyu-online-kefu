@@ -9,6 +9,9 @@ struct ChatView: View {
     @State private var showInfo = false
     @State private var showPhraseManager = false
     @State private var showWorkspace = false
+    @StateObject private var speech = SpeechRecognizer()
+    /// 开始说话前输入框里已有的内容（识别文本追加在后面）
+    @State private var draftBeforeSpeech = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -83,6 +86,13 @@ struct ChatView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openPhraseManager)) { _ in
             showPhraseManager = true
+        }
+        .onChange(of: speech.transcript) { text in
+            guard speech.isRecording else { return }
+            draft = draftBeforeSpeech + (draftBeforeSpeech.isEmpty ? "" : " ") + text
+        }
+        .onChange(of: speech.isRecording) { recording in
+            if !recording { draftBeforeSpeech = "" }
         }
         .task {
             state.markRead(conversation)          // 红点随打开消失，和网页端一致
@@ -180,6 +190,19 @@ struct ChatView: View {
                     .padding(.vertical, 9)
                     .background(Color(uiColor: .secondarySystemBackground))
                     .cornerRadius(18)
+
+                // 语音转文字：点一下开始说，再点一下停；识别文本实时追加到输入框
+                Button {
+                    if !speech.isRecording {
+                        draftBeforeSpeech = draft
+                    }
+                    speech.toggle()
+                } label: {
+                    Image(systemName: speech.isRecording ? "waveform.circle.fill" : "mic.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundColor(speech.isRecording ? .red : Theme.accent)
+                }
+                .accessibilityLabel(speech.isRecording ? "停止语音输入" : "语音转文字")
 
                 Button(action: sendDraft) {
                     Image(systemName: "arrow.up.circle.fill")
