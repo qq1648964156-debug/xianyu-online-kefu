@@ -3,6 +3,9 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
+    /// 后台刷新（BGAppRefreshTask）与界面共用同一份状态
+    static let shared = AppState()
+
     @Published var token: String? = AppSettings.token
     @Published var refreshToken: String? = AppSettings.refreshToken
     @Published var username: String? = AppSettings.username
@@ -69,6 +72,7 @@ final class AppState: ObservableObject {
         guard let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
               conversations[idx].unreadCount > 0 else { return }
         conversations[idx].unreadCount = 0
+        NotificationManager.shared.updateBadge(totalUnread)
     }
 
     // MARK: - 登录
@@ -119,7 +123,37 @@ final class AppState: ObservableObject {
         if conversations.isEmpty { await reloadConversations() }
     }
 
+    /// 未读总数（角标用）
+    var totalUnread: Int {
+        conversations.reduce(0) { $0 + max(0, $1.unreadCount) }
+    }
+
     // MARK: - 数据加载
+
+    /// 静默刷新：不转菊花、不弹红条，只为了让通知/角标拿到最新未读
+    func silentRefresh() async {
+        guard let account = selectedAccount else { return }
+        do {
+            let page = try await api.conversations(accountId: account.accountId, cursor: nil)
+            conversations = page.conversations
+            convCursor = page.nextCursor
+            NotificationManager.shared.handleConversations(conversations,
+                                                           accountName: account.displayName)
+        } catch {
+            // 后台刷新失败就算了，不打扰用户
+        }
+    }
+
+    /// 后台任务入口（App 被系统唤醒时）
+    func refreshInBackground() async {
+        api.baseURL = AppSettings.serverURL
+        api.token = AppSettings.token
+        if accounts.isEmpty {
+            await loadAccounts()
+        }
+        if selectedAccount == nil { selectedAccount = accounts.first }
+        await silentRefresh()
+    }
 
     func loadAccounts() async {
         loadingAccounts = true
@@ -150,6 +184,8 @@ final class AppState: ObservableObject {
             let page = try await api.conversations(accountId: account.accountId, cursor: nil)
             conversations = page.conversations
             convCursor = page.nextCursor
+            NotificationManager.shared.handleConversations(conversations,
+                                                           accountName: account.displayName)
         } catch {
             handle(error)
         }
