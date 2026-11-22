@@ -108,6 +108,13 @@ struct SettingsView: View {
                         Spacer()
                         Text(state.selectedAccount?.displayName ?? "未选择").foregroundColor(.secondary)
                     }
+                    // 「账号」Tab 已合并掉：这里给一行概况就够，切换入口在消息页左上角
+                    HStack {
+                        Text("账号概况")
+                        Spacer()
+                        Text("\(state.accounts.count) 个 · 已连接 \(state.accounts.filter { $0.connected }.count) 个")
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 Section(header: Text("关于")) {
