@@ -117,6 +117,19 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(header: Text("已读记录"), footer: Text("进过的会话会记一条已读水位，靠它压住红点（后端没有已读接口）。数字一直不增长说明记录没写入，告我。")) {
+                    HStack {
+                        Text("已记录会话")
+                        Spacer()
+                        Text("\(ReadStore.count()) 条").foregroundColor(.secondary)
+                    }
+                    Button(role: .destructive) {
+                        ReadStore.clearAll()
+                    } label: {
+                        Text("清空已读记录")
+                    }
+                }
+
                 Section(header: Text("输入"), footer: Text("开启后，聊天输入框会出现麦克风按钮，说话直接转成文字。属于实验功能：若开启后出现卡顿，请关闭本开关。")) {
                     Toggle("语音输入（实验）", isOn: Binding(
                         get: { AppSettings.speechEnabled },
