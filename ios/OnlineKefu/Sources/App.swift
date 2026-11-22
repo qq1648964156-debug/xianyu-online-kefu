@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct OnlineKefuApp: App {
-    @StateObject private var state = AppState()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var state = AppState.shared
 
     var body: some Scene {
         WindowGroup {
@@ -29,6 +30,8 @@ struct RootView: View {
 
 struct MainTabView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var pollTask: Task<Void, Never>? = nil
 
     var body: some View {
         TabView {
@@ -47,6 +50,26 @@ struct MainTabView: View {
 
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                startPolling()
+            } else {
+                pollTask?.cancel()
+                pollTask = nil
+            }
+        }
+        .onAppear { startPolling() }
+    }
+
+    /// 前台轮询：20 秒一次，静默（不闪 loading），有新消息就弹本地通知 + 更新角标
+    private func startPolling() {
+        pollTask?.cancel()
+        pollTask = Task {
+            while !Task.isCancelled {
+                await state.silentRefresh()
+                try? await Task.sleep(nanoseconds: 20 * 1_000_000_000)
+            }
         }
     }
 }
