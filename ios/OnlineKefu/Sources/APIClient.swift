@@ -198,6 +198,71 @@ final class APIClient {
     func quickPhrases() async throws -> [QuickPhrase] {
         try await get("api/v1/chat-new/quick-phrases")
     }
+
+    // MARK: - 快捷短语增删改（网页端同一套接口）
+
+    @discardableResult
+    func createQuickPhrase(title: String, content: String) async throws -> QuickPhrase? {
+        struct R: Decodable { let success: Bool?; let message: String?; let data: QuickPhrase? }
+        let r: R = try await post("api/v1/chat-new/quick-phrases",
+                                  body: ["title": title, "content": content])
+        if r.success == false { throw APIError(message: r.message ?? "新增失败") }
+        return r.data
+    }
+
+    @discardableResult
+    func updateQuickPhrase(id: Int, title: String, content: String) async throws -> QuickPhrase? {
+        struct R: Decodable { let success: Bool?; let message: String?; let data: QuickPhrase? }
+        let r: R = try await rawSend("PUT", "api/v1/chat-new/quick-phrases/\(id)",
+                                     body: ["title": title, "content": content])
+        if r.success == false { throw APIError(message: r.message ?? "保存失败") }
+        return r.data
+    }
+
+    func deleteQuickPhrase(id: Int) async throws {
+        struct R: Decodable { let success: Bool?; let message: String? }
+        let r: R = try await rawSend("DELETE", "api/v1/chat-new/quick-phrases/\(id)", body: nil)
+        if r.success == false { throw APIError(message: r.message ?? "删除失败") }
+    }
+
+    // MARK: - 会话信息（买家订单 / 咨询商品）
+
+    func customerOrders(accountId: String, buyerId: String, chatId: String) async throws -> [CustomerOrder] {
+        try await get("api/v1/chat-new/customer-orders/\(accountId)/\(buyerId)",
+                      query: ["chat_id": chatId])
+    }
+
+    func consultItem(accountId: String, cid: String) async throws -> ConsultItem? {
+        struct R: Decodable { let success: Bool?; let message: String?; let data: ConsultItem? }
+        let r: R = try await rawSend("GET", "api/v1/chat-new/consult-item/\(accountId)/\(cid)", body: nil)
+        if r.success == false { throw APIError(message: r.message ?? "获取咨询商品失败") }
+        return r.data
+    }
+
+    /// 通用发送（PUT/DELETE 等）：后端有的接口不是包在 data 里，直接解 R
+    private func rawSend<T: Decodable>(_ method: String, _ path: String,
+                                       body: [String: Any]?) async throws -> T {
+        guard let url = URL(string: baseURL.absoluteString + "/" + path) else {
+            throw APIError(message: "服务地址不合法")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        var (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode == 401, await refreshAccessToken() {
+            req.setValue("Bearer \(token ?? "")", forHTTPHeaderField: "Authorization")
+            (data, resp) = try await session.data(for: req)
+        }
+        if let http = resp as? HTTPURLResponse, http.statusCode == 401 {
+            throw APIError(message: "登录已过期，请重新登录")
+        }
+        return try decoder.decode(T.self, from: data)
+    }
 }
 
 struct EmptyData: Decodable {}
