@@ -32,6 +32,7 @@ final class AppState: ObservableObject {
     init() {
         api.baseURL = AppSettings.serverURL
         api.token = AppSettings.token
+        api.refreshToken = AppSettings.refreshToken
     }
 
     // MARK: - 错误与未读
@@ -40,7 +41,14 @@ final class AppState: ObservableObject {
     /// 以前会把它当网络错误弹红条，于是会话列表顶上一直挂着 "cancelled"（2026-11-22 实拍）。
     func handle(_ error: Error) {
         if Self.isCancellation(error) { return }
-        errorText = (error as? APIError)?.message ?? error.localizedDescription
+        let message = (error as? APIError)?.message ?? error.localizedDescription
+        // 自动续期失败 = 真的过期（refresh 也失效），退回登录页而不是留一个"什么都点不动"的界面
+        if message.contains("登录已过期") {
+            logout()
+            errorText = message
+            return
+        }
+        errorText = message
         scheduleErrorDismiss()
     }
 
