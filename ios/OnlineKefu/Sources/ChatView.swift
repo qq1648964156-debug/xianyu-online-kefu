@@ -8,10 +8,30 @@ struct ChatView: View {
     @State private var showQuickPhrases = false
     @State private var showInfo = false
     @State private var showPhraseManager = false
+    @State private var showWorkspace = false
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
+            if !conversation.itemTitle.isEmpty {
+                Button {
+                    showInfo = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "shippingbox.fill").font(.caption2)
+                        Text(conversation.itemTitle)
+                            .font(.caption)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right").font(.caption2)
+                    }
+                    .foregroundColor(Theme.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Theme.accent.opacity(0.08))
+                }
+                .buttonStyle(.plain)
+            }
             messageList
             if let err = state.errorText {
                 ErrorBanner(text: err, onDismiss: { state.clearError() })
@@ -46,12 +66,23 @@ struct ChatView: View {
             }
         }
         .sheet(isPresented: $showInfo) {
-            ConversationInfoSheet(conversation: conversation,
-                                  accountId: state.selectedAccount?.accountId ?? "")
+            WorkspaceSheet(conversation: conversation,
+                           accountId: state.selectedAccount?.accountId ?? "",
+                           initial: .item)
                 .environmentObject(state)
         }
         .sheet(isPresented: $showPhraseManager) {
             QuickPhrasesManageView().environmentObject(state)
+        }
+        .sheet(isPresented: $showWorkspace) {
+            WorkspaceSheet(conversation: conversation,
+                           accountId: state.selectedAccount?.accountId ?? "",
+                           initial: .phrases,
+                           onPickPhrase: { draft = $0 })
+                .environmentObject(state)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openPhraseManager)) { _ in
+            showPhraseManager = true
         }
         .task {
             state.markRead(conversation)          // 红点随打开消失，和网页端一致
