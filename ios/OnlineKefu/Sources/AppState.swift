@@ -92,12 +92,21 @@ final class AppState: ObservableObject {
     func markRead(_ conversation: Conversation, latestMessageTime: Double? = nil) {
         guard let account = selectedAccount else { return }
         let time = max(conversation.lastMessageTime, latestMessageTime ?? 0)
-        ReadStore.mark(account: account.accountId, cid: conversation.cid, time: time)
+        ReadStore.mark(account: account.accountId, cid: conversation.cid,
+                       time: time, summary: conversation.lastMessageSummary)
         if let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
            conversations[idx].unreadCount > 0 {
             conversations[idx].unreadCount = 0
             NotificationManager.shared.updateBadge(totalUnread)
         }
+    }
+
+    /// 渲染层判断：这个会话是否已读（不依赖刷新流程是否执行过 apply）
+    func isRead(_ conversation: Conversation) -> Bool {
+        guard let account = selectedAccount else { return false }
+        return ReadStore.isRead(account: account.accountId, cid: conversation.cid,
+                                time: conversation.lastMessageTime,
+                                summary: conversation.lastMessageSummary)
     }
 
     /// 一键已读：把当前列表全部置为已读（本地水位持久化，刷新后也不会回来）
