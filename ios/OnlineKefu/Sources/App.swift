@@ -46,10 +46,6 @@ struct MainTabView: View {
                 .tabItem { Label("网页版", systemImage: "safari.fill") }
                 .tag(AppTab.web)
 
-            AccountListView()
-                .tabItem { Label("账号", systemImage: "person.2.circle.fill") }
-                .tag(AppTab.accounts)
-
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
                 .tag(AppTab.settings)
