@@ -32,22 +32,27 @@ struct MainTabView: View {
     @EnvironmentObject var state: AppState
 
     var body: some View {
-        TabView {
+        TabView(selection: $state.selectedTab) {
             ConversationListView()
                 .tabItem { Label("消息", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tag(AppTab.messages)
 
             // 网页版：内嵌整个后台 Web 端，商品/订单/卡券/智能客服等全部功能都在这里
             WebConsoleView(serverURL: AppSettings.serverURL,
                            token: state.token,
                            refreshToken: state.refreshToken,
-                           username: state.username)
+                           username: state.username,
+                           pendingPath: state.pendingWebPath)
                 .tabItem { Label("网页版", systemImage: "safari.fill") }
+                .tag(AppTab.web)
 
             AccountListView()
                 .tabItem { Label("账号", systemImage: "person.2.circle.fill") }
+                .tag(AppTab.accounts)
 
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
+                .tag(AppTab.settings)
         }
         // 不在这里轮询：`/conversations` 会实时打闲鱼接口，20 秒一轮会拖慢甚至触发平台风控
         // （2026-11-22 1.3.0 装上后"其它功能全部报错"）。刷新交给：进页面 / 下拉 / 手动刷新。
