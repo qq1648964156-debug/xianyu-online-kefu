@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 
 @MainActor
+enum AppTab: Hashable { case messages, web, accounts, settings }
+
 final class AppState: ObservableObject {
     /// 后台刷新（BGAppRefreshTask）与界面共用同一份状态
     static let shared = AppState()
@@ -20,6 +22,10 @@ final class AppState: ObservableObject {
     @Published var loadingMessages = false
     @Published var sending = false
     @Published var errorText: String?
+    /// 当前 Tab（供"在网页版打开订单/商品"这类跳转使用）
+    @Published var selectedTab: AppTab = .messages
+    /// 待网页版打开的路径（如 "/orders"），WebConsoleView 消费后清空
+    @Published var pendingWebPath: String?
     private var errorDismissToken = 0
 
     private var convCursor: Int?
@@ -80,7 +86,31 @@ final class AppState: ObservableObject {
         guard let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
               conversations[idx].unreadCount > 0 else { return }
         conversations[idx].unreadCount = 0
+        if let account = selectedAccount {
+            ReadStore.mark(account: account.accountId,
+                           cid: conversation.cid,
+                           time: conversation.lastMessageTime)
+        }
         NotificationManager.shared.updateBadge(totalUnread)
+    }
+
+    /// 一键已读：把当前列表全部置为已读（本地水位持久化，刷新后也不会回来）
+    func markAllRead() {
+        guard let account = selectedAccount else { return }
+        ReadStore.markAll(account: account.accountId, conversations: conversations)
+        for i in conversations.indices { conversations[i].unreadCount = 0 }
+        NotificationManager.shared.clearBadge()
+    }
+
+    /// 跳到「网页版」并打开指定路径（订单管理 / 商品管理 / 智能客服…）
+    func openInWeb(_ path: String) {
+        pendingWebPath = path
+        selectedTab = .web
+    }
+
+    func consumePendingWebPath() -> String? {
+        defer { pendingWebPath = nil }
+        return pendingWebPath
     }
 
     // MARK: - 登录
@@ -143,7 +173,8 @@ final class AppState: ObservableObject {
         guard let account = selectedAccount else { return }
         do {
             let page = try await api.conversations(accountId: account.accountId, cursor: nil)
-            conversations = page.conversations
+            // 按本地已读水位清零，否则"点过又刷新"红点会复现
+            conversations = ReadStore.apply(account: account.accountId, conversations: page.conversations)
             convCursor = page.nextCursor
             NotificationManager.shared.handleConversations(conversations,
                                                            accountName: account.displayName)
@@ -203,7 +234,7 @@ final class AppState: ObservableObject {
         guard let account = selectedAccount, let cursor = convCursor else { return }
         do {
             let page = try await api.conversations(accountId: account.accountId, cursor: cursor)
-            conversations += page.conversations
+            conversations += ReadStore.apply(account: account.accountId, conversations: page.conversations)
             convCursor = page.nextCursor
         } catch {
             handle(error)
