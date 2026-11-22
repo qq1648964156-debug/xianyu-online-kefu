@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class AppState: ObservableObject {
     @Published var token: String? = AppSettings.token
+    @Published var refreshToken: String? = AppSettings.refreshToken
     @Published var username: String? = AppSettings.username
     @Published var accounts: [ChatAccount] = []
     @Published var selectedAccount: ChatAccount?
@@ -36,8 +37,10 @@ final class AppState: ObservableObject {
         do {
             let result = try await api.login(username: username, password: password)
             token = result.token
+            refreshToken = result.refreshToken
             self.username = result.username ?? username
             AppSettings.token = result.token
+            AppSettings.refreshToken = result.refreshToken
             AppSettings.username = self.username
             await loadAccounts()
             if selectedAccount == nil { selectedAccount = accounts.first }
@@ -49,6 +52,7 @@ final class AppState: ObservableObject {
 
     func logout() {
         token = nil
+        refreshToken = nil
         username = nil
         selectedAccount = nil
         accounts = []
