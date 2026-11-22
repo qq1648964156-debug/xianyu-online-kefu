@@ -7,8 +7,10 @@ final class APIClient {
 
     /// 服务地址（可在设置里改，存 UserDefaults）
     var baseURL: URL = AppSettings.serverURL
-    /// 登录后拿到的 token
+    /// 登录后拿到的 token（access，30 分钟过期）
     var token: String?
+    /// 刷新令牌（7 天），过期后用它换新 access
+    var refreshToken: String?
 
     private let session: URLSession = {
         let cfg = URLSessionConfiguration.default
@@ -41,7 +43,11 @@ final class APIClient {
         guard let url = comps.url else { throw APIError(message: "服务地址不合法") }
         var req = URLRequest(url: url)
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        let (data, resp) = try await session.data(for: req)
+        var (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode == 401, await refreshAccessToken() {
+            req.setValue("Bearer \(token ?? "")", forHTTPHeaderField: "Authorization")
+            (data, resp) = try await session.data(for: req)
+        }
         if let http = resp as? HTTPURLResponse, http.statusCode == 401 {
             throw APIError(message: "登录已过期，请重新登录")
         }
@@ -81,9 +87,18 @@ final class APIClient {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
 
-        let (data, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse else {
+        var (data, resp) = try await session.data(for: req)
+        guard var http = resp as? HTTPURLResponse else {
             throw APIError(message: "网络异常")
+        }
+        // access token 只有 30 分钟，过期后用 refresh_token 换一次再重试
+        if http.statusCode == 401, await refreshAccessToken() {
+            req.setValue("Bearer \(token ?? "")", forHTTPHeaderField: "Authorization")
+            (data, resp) = try await session.data(for: req)
+            guard let retried = resp as? HTTPURLResponse else {
+                throw APIError(message: "网络异常")
+            }
+            http = retried
         }
         if http.statusCode == 401 {
             throw APIError(message: "登录已过期，请重新登录")
@@ -107,6 +122,28 @@ final class APIClient {
         throw APIError(message: "返回数据格式不对")
     }
 
+    /// 用 refresh_token 换新的 access token。
+    /// 后端约定：POST /api/v1/auth/refresh，**refresh_token 放在 Authorization 头里**（不是 body）。
+    @discardableResult
+    func refreshAccessToken() async -> Bool {
+        let rt = (AppSettings.refreshToken ?? refreshToken ?? "").trimmingCharacters(in: .whitespaces)
+        guard !rt.isEmpty else { return false }
+        guard let url = URL(string: baseURL.absoluteString + "/api/v1/auth/refresh") else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(rt)", forHTTPHeaderField: "Authorization")
+        guard let (data, _) = try? await session.data(for: req),
+              let resp = try? decoder.decode(LoginResponse.self, from: data),
+              let result = resp.result else {
+            return false
+        }
+        token = result.token
+        refreshToken = result.refreshToken ?? rt
+        AppSettings.token = result.token
+        AppSettings.refreshToken = self.refreshToken
+        return true
+    }
+
     // MARK: - 业务接口
 
     func login(username: String, password: String) async throws -> LoginResult {
@@ -126,6 +163,7 @@ final class APIClient {
             throw APIError(message: resp.message ?? "登录失败")
         }
         token = result.token
+        refreshToken = result.refreshToken
         return result
     }
 
