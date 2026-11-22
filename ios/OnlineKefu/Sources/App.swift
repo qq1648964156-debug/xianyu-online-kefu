@@ -61,15 +61,24 @@ enum Theme {
 
 struct ErrorBanner: View {
     let text: String
+    var onDismiss: (() -> Void)? = nil
+
     var body: some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundColor(.white)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.red.opacity(0.9))
-            .cornerRadius(8)
-            .padding(.horizontal, 12)
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.footnote)
+            Text(text).font(.footnote).lineLimit(3)
+            Spacer(minLength: 4)
+            if onDismiss != nil {
+                Image(systemName: "xmark").font(.caption2)
+            }
+        }
+        .foregroundColor(.white)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.9))
+        .cornerRadius(8)
+        .padding(.horizontal, 12)
+        .onTapGesture { onDismiss?() }
     }
 }
 
