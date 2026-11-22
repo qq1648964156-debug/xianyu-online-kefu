@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    # 用 macos-latest：实测这个账号下 macos-14 跑不了（3~5s 直接 cancelled），latest 正常
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
