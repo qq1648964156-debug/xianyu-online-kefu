@@ -27,10 +27,19 @@ struct ConversationListView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        Task { await state.reloadAll() }
+                    Menu {
+                        Button {
+                            state.markAllRead()
+                        } label: {
+                            Label("全部标为已读", systemImage: "checkmark.circle")
+                        }
+                        Button {
+                            Task { await state.reloadAll() }
+                        } label: {
+                            Label("刷新", systemImage: "arrow.clockwise")
+                        }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }
