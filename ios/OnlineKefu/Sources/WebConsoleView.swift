@@ -15,7 +15,10 @@ struct WebConsoleView: View {
     let token: String?
     let refreshToken: String?
     let username: String?
+    /// 跨 tab 跳转：例如从会话信息点"订单管理"→ 网页版 /orders
+    let pendingPath: String?
 
+    @EnvironmentObject var state: AppState
     @StateObject private var model = WebViewModel()
 
     var body: some View {
@@ -60,6 +63,11 @@ struct WebConsoleView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .onChange(of: pendingPath) { path in
+            guard let path, !path.isEmpty else { return }
+            model.load(path: path, serverURL: serverURL)
+            _ = state.consumePendingWebPath()
+        }
     }
 
 }
@@ -163,6 +171,17 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
     func goHome(_ url: URL) { webView?.load(URLRequest(url: url)) }
+
+    /// 打开站内指定路由（自动带上 app_embed=1，保持"去壳"模式）
+    func load(path: String, serverURL: URL) {
+        var comps = URLComponents(url: URL(string: path, relativeTo: serverURL) ?? serverURL,
+                                  resolvingAgainstBaseURL: false)
+        var items = comps?.queryItems ?? []
+        items.removeAll { $0.name == "app_embed" }
+        items.append(URLQueryItem(name: "app_embed", value: "1"))
+        comps?.queryItems = items
+        if let url = comps?.url { webView?.load(URLRequest(url: url)) }
+    }
 
     // MARK: - WKNavigationDelegate
 
