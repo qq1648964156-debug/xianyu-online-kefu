@@ -54,6 +54,9 @@ struct WebConsoleView: View {
                     Menu {
                         Button { model.goForward() } label: { Label("前进", systemImage: "chevron.forward") }
                         Button { model.reload() } label: { Label("刷新", systemImage: "arrow.clockwise") }
+                        Button { model.hardReload() } label: {
+                            Label("强制刷新（清缓存）", systemImage: "arrow.triangle.2.circlepath")
+                        }
                         Button { model.goHome(serverURL) } label: { Label("回到首页", systemImage: "house") }
                         Button {
                             UIApplication.shared.open(model.currentURL ?? serverURL)
@@ -141,8 +144,14 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         var items = comps?.queryItems ?? []
         items.removeAll { $0.name == "app_embed" }
         items.append(URLQueryItem(name: "app_embed", value: "1"))
+        // 加时间戳 + 忽略缓存：否则 WebView 可能一直用旧的 index.html，
+        // 导致后台前端更新后 App 里看不到（2026-11-23 用户反馈"改了还是叠着"）
+        items.append(URLQueryItem(name: "_t", value: String(Int(Date().timeIntervalSince1970))))
         comps?.queryItems = items
-        wv.load(URLRequest(url: comps?.url ?? serverURL))
+        let req = URLRequest(url: comps?.url ?? serverURL,
+                             cachePolicy: .reloadIgnoringLocalCacheData,
+                             timeoutInterval: 30)
+        wv.load(req)
         return wv
     }
 
@@ -172,6 +181,16 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     func goBack() { webView?.goBack() }
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
+
+    /// 清掉 WebView 的磁盘/内存缓存后重新加载 —— 后台前端更新了但界面还是老样子时用
+    func hardReload() {
+        let types: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache]
+        WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: .distantPast) { [weak self] in
+            DispatchQueue.main.async {
+                self?.webView?.reload()
+            }
+        }
+    }
     func goHome(_ url: URL) { webView?.load(URLRequest(url: url)) }
 
     /// 打开站内指定路由（自动带上 app_embed=1，保持"去壳"模式）
