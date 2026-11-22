@@ -97,6 +97,8 @@ struct ChatView: View {
         .task {
             state.markRead(conversation)          // 红点随打开消失，和网页端一致
             await state.loadMessages(conversation: conversation)
+            // 用真正加载到的最新消息时间再补一次水位，避免列表里时间戳偏旧导致刷新后红点复现
+            state.markRead(conversation, latestMessageTime: state.messages.map(\.time).max())
             await state.loadQuickPhrasesIfNeeded()
         }
     }
