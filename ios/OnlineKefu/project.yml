@@ -33,8 +33,8 @@ targets:
       properties:
         CFBundleDisplayName: 在线客服
         CFBundleName: 在线客服
-        CFBundleShortVersionString: "1.5.3"
-        CFBundleVersion: "13"
+        CFBundleShortVersionString: "1.6.0"
+        CFBundleVersion: "14"
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageName: LaunchLogo
@@ -45,11 +45,13 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: 需要访问局域网内的闲鱼客服服务
+        NSMicrophoneUsageDescription: 用于语音转文字，方便快速回复买家
+        NSSpeechRecognitionUsageDescription: 用于把你说的话转成文字填入输入框
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.xianyu.onlinekefu
-        MARKETING_VERSION: "1.5.3"
-        CURRENT_PROJECT_VERSION: "13"
+        MARKETING_VERSION: "1.6.0"
+        CURRENT_PROJECT_VERSION: "14"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
