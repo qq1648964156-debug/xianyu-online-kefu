@@ -119,6 +119,13 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             )
         }
 
+        // 输入框字号必须 >=16px，否则 iOS 聚焦时会把整页放大（用户反馈"进去就放大、要手动缩回"）。
+        // 用单引号包 CSS，避免 Swift 字符串里再转义双引号。
+        let css = "input,textarea,select{font-size:16px !important}html{-webkit-text-size-adjust:100%}"
+        let cssJS = "var s=document.createElement('style');s.textContent='" + css + "';document.documentElement.appendChild(s);"
+        cfg.userContentController.addUserScript(WKUserScript(
+            source: cssJS, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.navigationDelegate = self
         wv.uiDelegate = self
@@ -201,8 +208,24 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else { return decisionHandler(.allow) }
         let host = url.host ?? ""
+        // 非 http(s)（tel/mailto/自定义 scheme）→ 交系统处理
+        if let scheme = url.scheme?.lowercased(), !["http", "https", "about", "data", "blob"].contains(scheme) {
+            UIApplication.shared.open(url)
+            return decisionHandler(.cancel)
+        }
+        // 子框架（iframe）一律放行：91卡券库 / 闲管家库 都是 iframe 嵌本地桥接面板，
+        // 它们的主机名跟后台不同（127.0.0.1:7890 / :36301），过去被当成"站外链接"跳去 Safari，
+        // iframe 里直接白屏（2026-11-22 用户反馈）。
+        if let target = navigationAction.targetFrame, !target.isMainFrame {
+            return decisionHandler(.allow)
+        }
         if navigationAction.targetFrame == nil {
-            webView.load(navigationAction.request)
+            // target=_blank：同站留在 WebView，站外交系统浏览器
+            if !serverHost.isEmpty, !host.isEmpty, !host.hasSuffix(serverHost) {
+                UIApplication.shared.open(url)
+            } else {
+                webView.load(navigationAction.request)
+            }
             return decisionHandler(.cancel)
         }
         if !serverHost.isEmpty, !host.isEmpty, !host.hasSuffix(serverHost), host != serverHost {
