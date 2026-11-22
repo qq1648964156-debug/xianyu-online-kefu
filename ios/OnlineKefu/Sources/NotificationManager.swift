@@ -13,8 +13,20 @@ import BackgroundTasks
 final class NotificationManager {
     static let shared = NotificationManager()
     private let center = UNUserNotificationCenter.current()
-    /// 已经通知过的消息指纹（cid + 最后一条消息时间），避免同一条反复弹
-    private var notified: Set<String> = []
+    /// 每个会话"已通知到的时间戳"（持久化）
+    ///
+    /// ⚠️ 以前是内存里的 Set，**App 重启 / 刷新列表就清空** → 未读会话会被反复弹一遍
+    /// （2026-11-23 用户反馈"一直推送推送过的消息弹窗"）。
+    /// 现在落 UserDefaults，并且判据改成"该会话的最后消息时间比已通知的新"才弹。
+    private let marksKey = "xy.notifiedMarks"
+
+    private func loadMarks() -> [String: Double] {
+        (UserDefaults.standard.dictionary(forKey: marksKey) as? [String: Double]) ?? [:]
+    }
+
+    private func saveMarks(_ map: [String: Double]) {
+        UserDefaults.standard.set(map, forKey: marksKey)
+    }
 
     func requestAuthorization() {
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -37,17 +49,20 @@ final class NotificationManager {
         }
     }
 
-    /// 有新未读时弹本地通知（同一会话同一条消息只弹一次）
+    /// 有新未读时弹本地通知（**只有比上次通知更新的消息才弹**，刷新列表不会重弹）
     func handleConversations(_ conversations: [Conversation], accountName: String) {
         let unread = conversations.filter { $0.unreadCount > 0 }
         updateBadge(unread.reduce(0) { $0 + $1.unreadCount })
 
+        var marks = loadMarks()
+        var changed = false
         for conv in unread {
-            let fingerprint = "\(conv.cid)-\(Int(conv.lastMessageTime))"
-            guard !notified.contains(fingerprint) else { continue }
-            notified.insert(fingerprint)
-            // 控制集合大小，避免长期运行无限增长
-            if notified.count > 500 { notified.removeAll() }
+            let last = conv.lastMessageTime
+            // 关键判据：这条消息已经通知过（时间不新）就跳过，刷新/重启都不会重弹
+            guard last > (marks[conv.cid] ?? 0) else { continue }
+            marks[conv.cid] = last
+            changed = true
+            let fingerprint = "\(conv.cid)-\(Int(last))"
 
             let content = UNMutableNotificationContent()
             content.title = conv.otherUserName.isEmpty ? "新消息" : conv.otherUserName
@@ -64,12 +79,12 @@ final class NotificationManager {
                                                 trigger: nil)  // nil = 立即
             center.add(request)
         }
+        if changed { saveMarks(marks) }
     }
 
     /// 进后台前清掉角标（可选：如果你希望"打开 App 即已读"）
     func clearBadge() {
         updateBadge(0)
-        notified.removeAll()
     }
 }
 
