@@ -52,9 +52,11 @@ struct ConversationListView: View {
         .task { await state.ensureReady() }
     }
 
+    /// 标题优先显示**店铺名**（后端 account_id 就是店铺名，如「成都惠生活」），
+    /// display_name 只是闲鱼昵称，卖家用它分不清店铺
     private var accountTitle: String {
         guard let acc = state.selectedAccount else { return "消息" }
-        return acc.displayName.isEmpty ? acc.accountId : acc.displayName
+        return acc.accountId.isEmpty ? acc.displayName : acc.accountId
     }
 
     private var filtered: [Conversation] {
@@ -151,31 +153,78 @@ struct AccountPickerSheet: View {
     var body: some View {
         NavigationView {
             List {
-                ForEach(state.accounts) { acc in
-                    Button {
-                        Task {
-                            await state.select(account: acc)
-                            isPresented = false
+                Section {
+                    HStack(spacing: 6) {
+                        Image(systemName: "storefront").font(.caption)
+                        Text("共 \(state.accounts.count) 个店铺 · 已连接 \(state.accounts.filter { $0.connected }.count) 个")
+                            .font(.caption)
+                        Spacer()
+                        if state.loadingAccounts {
+                            ProgressView().scaleEffect(0.7)
                         }
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(acc.title).font(.system(size: 15, weight: .medium))
-                                Text(acc.connected ? "IM 已连接" : "IM 未连接")
-                                    .font(.caption2)
-                                    .foregroundColor(acc.connected ? .green : .secondary)
+                    }
+                    .foregroundColor(.secondary)
+                }
+
+                Section("点一个切换为当前店铺") {
+                    ForEach(state.accounts) { acc in
+                        Button {
+                            Task {
+                                await state.select(account: acc)
+                                isPresented = false
                             }
-                            Spacer()
-                            if state.selectedAccount?.accountId == acc.accountId {
-                                Image(systemName: "checkmark.circle.fill").foregroundColor(Theme.accent)
+                        } label: {
+                            HStack(spacing: 10) {
+                                // 状态点
+                                Circle()
+                                    .fill(acc.connected ? Color.green : Color.gray.opacity(0.35))
+                                    .frame(width: 8, height: 8)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    // 店铺名（account_id）
+                                    Text(acc.accountId)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.primary)
+                                    HStack(spacing: 6) {
+                                        if !acc.displayName.isEmpty, acc.displayName != acc.accountId {
+                                            Text(acc.displayName)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        if !acc.remark.isEmpty {
+                                            Text(acc.remark)
+                                                .font(.caption2)
+                                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                                .background(Color.orange.opacity(0.15))
+                                                .foregroundColor(.orange)
+                                                .cornerRadius(4)
+                                        }
+                                        Text(acc.connected ? "IM 已连接" : "IM 未连接")
+                                            .font(.caption2)
+                                            .foregroundColor(acc.connected ? .green : .secondary)
+                                    }
+                                }
+                                Spacer()
+                                if state.selectedAccount?.accountId == acc.accountId {
+                                    Image(systemName: "checkmark.circle.fill").foregroundColor(Theme.accent)
+                                }
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
-            .navigationTitle("选择账号")
+            .listStyle(.insetGrouped)
+            .refreshable { await state.loadAccounts() }
+            .navigationTitle("切换店铺")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        Task { await state.loadAccounts() }
+                    } label: { Image(systemName: "arrow.clockwise") }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("关闭") { isPresented = false }
                 }
