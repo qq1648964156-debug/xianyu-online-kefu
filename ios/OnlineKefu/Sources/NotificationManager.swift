@@ -82,14 +82,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.shared.requestAuthorization()
 
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.bgTaskID, using: nil) { task in
-            guard let refresh = task as? BGAppRefreshTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            self.handleBackgroundRefresh(refresh)
-        }
-        scheduleBackgroundRefresh()
+        // 不再注册 BGAppRefreshTask：未签名包经常被系统拒绝，且后台唤醒会顺带打闲鱼接口，
+        // 收益低于风险（2026-11-22 撤掉）。锁屏推送交给后台的 Bark 渠道。
         return true
     }
 
@@ -100,30 +94,4 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .list, .sound])
     }
 
-    func applicationDidEnterBackground(_ application: UIApplication) {
-        scheduleBackgroundRefresh()
-    }
-
-    private func scheduleBackgroundRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: Self.bgTaskID)
-        // 系统只把它当"不早于这个时间"，实际何时跑由 iOS 决定
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            // 未签名包可能不被允许注册后台任务，失败不影响前台使用
-            print("[后台刷新] 调度失败:", error.localizedDescription)
-        }
-    }
-
-    private func handleBackgroundRefresh(_ task: BGAppRefreshTask) {
-        scheduleBackgroundRefresh()  // 链式续期
-        let work = Task {
-            await AppState.shared.refreshInBackground()
-            task.setTaskCompleted(success: true)
-        }
-        task.expirationHandler = {
-            work.cancel()
-        }
-    }
 }
