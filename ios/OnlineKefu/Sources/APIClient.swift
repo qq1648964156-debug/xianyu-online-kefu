@@ -292,6 +292,12 @@ enum AppSettings {
         set { UserDefaults.standard.set(newValue, forKey: refreshKey) }
     }
 
+    /// 语音输入开关（实验功能，默认关闭 —— 1.6.0 曾因音频初始化卡死界面）
+    static var speechEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "xy.speechEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "xy.speechEnabled") }
+    }
+
     static var username: String? {
         get { UserDefaults.standard.string(forKey: nameKey) }
         set { UserDefaults.standard.set(newValue, forKey: nameKey) }
