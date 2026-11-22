@@ -6,6 +6,8 @@ struct ChatView: View {
 
     @State private var draft = ""
     @State private var showQuickPhrases = false
+    @State private var showInfo = false
+    @State private var showPhraseManager = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -19,6 +21,13 @@ struct ChatView: View {
         .navigationTitle(conversation.otherUserName.isEmpty ? "聊天" : conversation.otherUserName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
@@ -35,6 +44,14 @@ struct ChatView: View {
                     Image(systemName: "ellipsis.circle")
                 }
             }
+        }
+        .sheet(isPresented: $showInfo) {
+            ConversationInfoSheet(conversation: conversation,
+                                  accountId: state.selectedAccount?.accountId ?? "")
+                .environmentObject(state)
+        }
+        .sheet(isPresented: $showPhraseManager) {
+            QuickPhrasesManageView().environmentObject(state)
         }
         .task {
             state.markRead(conversation)          // 红点随打开消失，和网页端一致
@@ -96,6 +113,15 @@ struct ChatView: View {
             if !state.quickPhrases.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
+                        Button {
+                            showPhraseManager = true
+                        } label: {
+                            Label("管理", systemImage: "slider.horizontal.3")
+                                .font(.caption)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(Color(uiColor: .secondarySystemBackground))
+                                .clipShape(Capsule())
+                        }
                         ForEach(state.quickPhrases) { phrase in
                             Button {
                                 draft = phrase.content
