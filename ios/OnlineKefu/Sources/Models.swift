@@ -106,6 +106,22 @@ struct Conversation: Decodable, Identifiable, Hashable {
         case itemTitle, itemId, lastMessageSummary, lastMessageTime, unreadCount
     }
 
+    /// 推送新建会话时用（后端列表里还没有这个会话）
+    init(cid: String, rawCid: String? = nil, otherUserId: String, otherUserName: String,
+         otherUserAvatar: String = "", itemTitle: String = "", itemId: String? = nil,
+         lastMessageSummary: String, lastMessageTime: Double, unreadCount: Int) {
+        self.cid = cid
+        self.rawCid = rawCid
+        self.otherUserId = otherUserId
+        self.otherUserName = otherUserName
+        self.otherUserAvatar = otherUserAvatar
+        self.itemTitle = itemTitle
+        self.itemId = itemId
+        self.lastMessageSummary = lastMessageSummary
+        self.lastMessageTime = lastMessageTime
+        self.unreadCount = unreadCount
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cid = (try? c.decode(String.self, forKey: .cid)) ?? ""
@@ -139,6 +155,8 @@ struct ConversationPage: Decodable {
 struct ChatMessage: Decodable, Identifiable {
     let messageId: String
     let senderName: String
+    /// 发送者ID（推送里带，用于新会话占位时定位买家）
+    let senderId: String
     let isSelf: Bool
     let type: String
     let text: String
@@ -149,13 +167,14 @@ struct ChatMessage: Decodable, Identifiable {
     var isImage: Bool { type == "image" && !images.isEmpty }
 
     enum CodingKeys: String, CodingKey {
-        case messageId, senderName, isSelf, type, text, images, time
+        case messageId, senderName, senderId, isSelf, type, text, images, time
     }
 
     init(messageId: String, senderName: String, isSelf: Bool, type: String,
-         text: String, images: [String] = [], time: Double) {
+         text: String, images: [String] = [], time: Double, senderId: String = "") {
         self.messageId = messageId
         self.senderName = senderName
+        self.senderId = senderId
         self.isSelf = isSelf
         self.type = type
         self.text = text
@@ -167,6 +186,7 @@ struct ChatMessage: Decodable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         messageId = (try? c.decode(String.self, forKey: .messageId)) ?? UUID().uuidString
         senderName = (try? c.decode(String.self, forKey: .senderName)) ?? ""
+        senderId = (try? c.decode(String.self, forKey: .senderId)) ?? ""
         isSelf = (try? c.decode(Bool.self, forKey: .isSelf)) ?? false
         type = (try? c.decode(String.self, forKey: .type)) ?? "text"
         text = (try? c.decode(String.self, forKey: .text)) ?? ""
