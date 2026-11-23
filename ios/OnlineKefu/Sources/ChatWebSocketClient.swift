@@ -131,7 +131,8 @@ final class ChatWebSocketClient {
                 type: (m["type"] as? String) ?? "text",
                 text: (m["text"] as? String) ?? "",
                 images: (m["images"] as? [String]) ?? [],
-                time: (m["time"] as? Double) ?? (Double(m["time"] as? Int ?? 0))
+                time: (m["time"] as? Double) ?? (Double(m["time"] as? Int ?? 0)),
+                senderId: (m["senderId"] as? String) ?? ""
             )
             onEvent?(.newMessage(cid: cid, message: msg))
         default:
