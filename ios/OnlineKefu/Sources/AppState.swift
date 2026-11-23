@@ -231,6 +231,7 @@ final class AppState: ObservableObject {
     /// 建立实时通道（切账号 / 回前台时调用）
     func startRealtime() {
         guard let account = selectedAccount, let token, !token.isEmpty else { return }
+        lastConnectAttempt = Date()
         let client = AppState.wsClient ?? {
             let c = ChatWebSocketClient()
             AppState.wsClient = c
@@ -243,6 +244,27 @@ final class AppState: ObservableObject {
         }
         client.connect(serverURL: AppSettings.serverURL, accountId: account.accountId, token: token)
         startFallbackTimer()
+    }
+
+    /// 上一次发起 WS 连接的时间（用于识别"刚连上就被踢"= 鉴权失败）
+    private var lastConnectAttempt = Date.distantPast
+    private var lastAuthRetryAt = Date.distantPast
+
+    /// access token 只有 30 分钟：WS 连接不走 APIClient 的 401 重试，
+    /// 拿过期 token 会被后端以 4401 关掉 → 表现为"一直重连但收不到消息"（2026-11-23 实锤）。
+    /// 这里在识别到"刚连上就断"时刷新令牌并立即重连，30 秒内只做一次。
+    private func refreshTokenAndReconnect() async {
+        guard Date().timeIntervalSince(lastAuthRetryAt) > 30 else { return }
+        lastAuthRetryAt = Date()
+        if await api.refreshAccessToken() {
+            token = api.token
+            AppSettings.token = api.token
+        }
+        guard let account = selectedAccount else { return }
+        lastConnectAttempt = Date()
+        AppState.wsClient?.connect(serverURL: AppSettings.serverURL,
+                                   accountId: account.accountId,
+                                   token: token ?? "")
     }
 
     func stopRealtime() {
@@ -271,6 +293,10 @@ final class AppState: ObservableObject {
             Task { await silentRefresh() }      // 补上断线期间可能漏掉的消息
         case .disconnected:
             realtimeConnected = false
+            // 连上不到 3 秒就断 → 大概率是 token 过期被 4401 拒绝，刷新后重连
+            if Date().timeIntervalSince(lastConnectAttempt) < 3 {
+                Task { await refreshTokenAndReconnect() }
+            }
         case .newMessage(let cid, let msg):
             applyIncoming(cid: cid, message: msg)
         }
