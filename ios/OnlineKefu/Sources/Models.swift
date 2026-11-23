@@ -340,3 +340,67 @@ struct ConversationOrderTag: Decodable {
         }
     }
 }
+
+
+// MARK: - 订单列表（工作区"全部订单"）
+
+struct OrderItem: Decodable, Identifiable {
+    let id: String
+    let orderId: String
+    let cookieId: String
+    let itemTitle: String
+    let buyerNick: String
+    let skuInfo: String
+    let quantity: Int
+    let amount: String
+    let status: String
+    let receiverName: String
+    let placedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case orderId = "order_id"
+        case cookieId = "cookie_id"
+        case itemTitle = "item_title"
+        case buyerNick = "buyer_fish_nick"
+        case skuInfo = "sku_info"
+        case quantity, amount, status
+        case receiverName = "receiver_name"
+        case placedAt = "placed_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        orderId = (try? c.decode(String.self, forKey: .orderId)) ?? ""
+        cookieId = (try? c.decode(String.self, forKey: .cookieId)) ?? ""
+        itemTitle = (try? c.decode(String.self, forKey: .itemTitle)) ?? ""
+        buyerNick = (try? c.decode(String.self, forKey: .buyerNick)) ?? ""
+        skuInfo = (try? c.decode(String.self, forKey: .skuInfo)) ?? ""
+        quantity = (try? c.decode(Int.self, forKey: .quantity)) ?? 1
+        amount = (try? c.decode(String.self, forKey: .amount)) ?? ""
+        status = (try? c.decode(String.self, forKey: .status)) ?? ""
+        receiverName = (try? c.decode(String.self, forKey: .receiverName)) ?? ""
+        placedAt = (try? c.decode(String.self, forKey: .placedAt)) ?? ""
+    }
+
+    var statusLabel: String {
+        switch status {
+        case "pending_payment": return "待付款"
+        case "pending_ship", "pending", "paid": return "待发货"
+        case "shipped": return "已发货"
+        case "completed": return "交易成功"
+        case "refunded": return "已退款"
+        case "refunding": return "退款中"
+        case "cancelled": return "已关闭"
+        default: return status
+        }
+    }
+}
+
+struct OrderListResponse: Decodable {
+    let success: Bool?
+    let message: String?
+    let data: [OrderItem]
+    let total: Int
+}
