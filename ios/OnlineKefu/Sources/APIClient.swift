@@ -234,6 +234,16 @@ final class APIClient {
         return res
     }
 
+    /// 订单列表（工作区"全部订单"用）
+    func orders(page: Int = 1, pageSize: Int = 20, status: String? = nil,
+                cookieId: String? = nil) async throws -> OrderListResponse {
+        var q: [String: String] = ["page": String(page), "page_size": String(pageSize)]
+        if let status, !status.isEmpty { q["status"] = status }
+        if let cookieId, !cookieId.isEmpty { q["cookie_id"] = cookieId }
+        // 订单接口是 {success, data:[...], total} 的整包结构，不能走 get 的 data 解包
+        return try await rawGet("api/v1/orders", query: q)
+    }
+
     // MARK: - 会话信息（买家订单 / 咨询商品）
 
     func customerOrders(accountId: String, buyerId: String, chatId: String) async throws -> [CustomerOrder] {
