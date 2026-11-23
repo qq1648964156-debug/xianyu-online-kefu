@@ -96,10 +96,14 @@ struct ChatView: View {
         }
         .onAppear {
             state.viewingCID = conversation.cid
+            state.viewingAccountId = state.accountId(for: conversation)
             state.startRealtime()
         }
         .onDisappear {
-            if state.viewingCID == conversation.cid { state.viewingCID = nil }
+            if state.viewingCID == conversation.cid {
+                state.viewingCID = nil
+                state.viewingAccountId = nil
+            }
         }
         .task {
             state.markRead(conversation)          // 红点随打开消失，和网页端一致
