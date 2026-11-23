@@ -14,6 +14,17 @@ struct ChatView: View {
     @State private var draftBeforeSpeech = ""
     @FocusState private var focused: Bool
 
+    /// 直达网页版的「此商品工作区」（咨询商品面板 + 订单/发货/退款/改价）
+    private func openItemWorkspaceInWeb() {
+        let aid = state.accountId(for: conversation)
+        state.openInWeb("/online-chat-new", query: [
+            "account_id": aid,
+            "cid": conversation.cid,
+            "tab": "tools",
+            "work": "consult",
+        ])
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if !conversation.itemTitle.isEmpty {
@@ -46,10 +57,12 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
-                    showInfo = true
+                    openItemWorkspaceInWeb()
                 } label: {
+                    // 图标保留 ⓘ（用户已习惯这个位置），动作改为直达「此商品的工作区」
                     Image(systemName: "info.circle")
                 }
+                .accessibilityLabel("打开此商品的工作区")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -57,6 +70,11 @@ struct ChatView: View {
                         Task { await state.loadMessages(conversation: conversation) }
                     } label: {
                         Label("刷新消息", systemImage: "arrow.clockwise")
+                    }
+                    Button {
+                        showInfo = true
+                    } label: {
+                        Label("应用内工作区", systemImage: "square.grid.2x2")
                     }
                     Button {
                         UIPasteboard.general.string = conversation.itemTitle
@@ -70,7 +88,7 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showInfo) {
             WorkspaceSheet(conversation: conversation,
-                           accountId: state.selectedAccount?.accountId ?? "",
+                           accountId: state.accountId(for: conversation),
                            initial: .item)
                 .environmentObject(state)
         }
@@ -79,7 +97,7 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showWorkspace) {
             WorkspaceSheet(conversation: conversation,
-                           accountId: state.selectedAccount?.accountId ?? "",
+                           accountId: state.accountId(for: conversation),
                            initial: .phrases,
                            onPickPhrase: { draft = $0 })
                 .environmentObject(state)
