@@ -199,7 +199,8 @@ final class AppState: ObservableObject {
         }()
         client.onEvent = { [weak self] event in
             guard let self else { return }
-            Task { @MainActor in self.handleRealtime(event) }
+            if Thread.isMainThread { self.handleRealtime(event) }
+            else { DispatchQueue.main.async { self.handleRealtime(event) } }
         }
         client.connect(serverURL: AppSettings.serverURL, accountId: account.accountId, token: token)
         startFallbackTimer()
