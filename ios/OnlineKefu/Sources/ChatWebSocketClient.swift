@@ -71,7 +71,10 @@ final class ChatWebSocketClient {
         comps.scheme = (comps.scheme == "https") ? "wss" : "ws"
         var path = comps.path
         if path.hasSuffix("/") { path.removeLast() }
-        comps.path = path + "/api/v1/chat-new/ws/\(accountId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? accountId)"
+        // ⚠️ 这里**不能再手动 percent-encode**：URLComponents.path 自己会编码，
+        // 提前编码会变成双重编码（中文账号名 → %25E4%25BC...），
+        // 后端拿到编码串查不到账号，WS 注册到错误的 key 上 → 收不到任何推送（2026-11-23 实锤）。
+        comps.path = path + "/api/v1/chat-new/ws/\(accountId)"
         comps.queryItems = [URLQueryItem(name: "token", value: token)]
         return comps.url
     }
