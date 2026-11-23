@@ -85,7 +85,9 @@ struct ConversationListView: View {
             List {
                 ForEach(filtered) { conv in
                     NavigationLink(destination: ChatView(conversation: conv)) {
-                        ConversationRow(conversation: conv, isRead: state.isRead(conv))
+                        ConversationRow(conversation: conv,
+                                    isRead: state.isRead(conv),
+                                    orderTag: state.orderTag(for: conv))
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onAppear {
@@ -106,6 +108,21 @@ struct ConversationRow: View {
     let conversation: Conversation
     /// 已读判定（渲染层再压一次，防止刷新流程漏掉 apply 时红点复现）
     var isRead: Bool = false
+    /// 买家订单状态（有订单才显示，对齐网页版"已发货/交易成功"标签）
+    var orderTag: ConversationOrderTag?
+
+    private static func chipColor(_ status: String) -> Color {
+        switch status {
+        case "refunding": return .orange
+        case "refunded": return .gray
+        case "pending_payment": return .red
+        case "pending_ship", "pending", "paid": return .orange
+        case "shipped": return .blue
+        case "completed": return .green
+        case "cancelled": return .gray
+        default: return .secondary
+        }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -115,6 +132,15 @@ struct ConversationRow: View {
                     Text(conversation.otherUserName.isEmpty ? "买家" : conversation.otherUserName)
                         .font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
+                    if let tag = orderTag {
+                        Text(tag.chatLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .foregroundColor(Self.chipColor(tag.status))
+                            .background(Self.chipColor(tag.status).opacity(0.12))
+                            .cornerRadius(4)
+                            .fixedSize()
+                    }
                     Spacer(minLength: 0)
                     Text(conversation.lastMessageTime.chatTimeText)
                         .font(.caption2)
