@@ -10,9 +10,10 @@ import SwiftUI
 /// 一屏内完成"看看买家问了什么、有没有下单、要不要发货、发什么话"，不用来回切 Tab。
 struct WorkspaceSheet: View {
     enum Segment: String, CaseIterable, Identifiable {
-        case phrases = "快捷短语"
-        case item = "咨询商品"
-        case orders = "订单"
+        case phrases = "短语"
+        case item = "商品"
+        case orders = "买家订单"
+        case allOrders = "全部订单"
         var id: String { rawValue }
     }
 
@@ -30,6 +31,12 @@ struct WorkspaceSheet: View {
     @State private var orders: [CustomerOrder] = []
     @State private var loading = true
     @State private var errorText: String?
+    // 全部订单
+    @State private var allOrders: [OrderItem] = []
+    @State private var allOrdersPage = 1
+    @State private var allOrdersHasMore = true
+    @State private var allOrdersLoading = false
+    @State private var statusFilter = ""
 
     init(conversation: Conversation, accountId: String,
          initial: Segment = .phrases,
@@ -67,6 +74,7 @@ struct WorkspaceSheet: View {
                         case .phrases: phrasesSection
                         case .item: itemSection
                         case .orders: ordersSection
+                        case .allOrders: allOrdersSection
                         }
                         moreSection
                     }
@@ -237,6 +245,120 @@ struct WorkspaceSheet: View {
                     }
                 }
             }
+        }
+    }
+
+
+    // MARK: - 全部订单
+
+    private var allOrdersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("", selection: $statusFilter) {
+                Text("全部").tag("")
+                Text("待发货").tag("pending_ship")
+                Text("已发货").tag("shipped")
+                Text("退款中").tag("refunding")
+                Text("已完成").tag("completed")
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: statusFilter) { _ in
+                Task { await reloadAllOrders() }
+            }
+
+            if allOrdersLoading && allOrders.isEmpty {
+                HStack { ProgressView(); Text("加载中…").font(.footnote) }
+            } else if allOrders.isEmpty {
+                Text("没有订单").font(.footnote).foregroundColor(.secondary)
+            } else {
+                ForEach(allOrders) { o in
+                    Button {
+                        // 订单详情目前只有网页版有：直接跳订单管理（同一套登录态）
+                        state.openInWeb("/orders")
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Text(o.itemTitle.isEmpty ? "订单 \(o.orderId)" : o.itemTitle)
+                                    .font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Spacer()
+                                Text("¥\(o.amount)").font(.system(size: 13, weight: .semibold)).foregroundColor(.red)
+                            }
+                            HStack(spacing: 6) {
+                                Text(o.statusLabel)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .foregroundColor(Theme.accent)
+                                    .background(Theme.accent.opacity(0.12))
+                                    .cornerRadius(4)
+                                if !o.skuInfo.isEmpty {
+                                    Text(o.skuInfo).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                Text(o.placedAt).font(.caption2).foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 6) {
+                                Text(o.orderId).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                                if !o.buyerNick.isEmpty {
+                                    Text("· \(o.buyerNick)").font(.system(size: 10)).foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { UIPasteboard.general.string = o.orderId } label: {
+                            Label("复制订单号", systemImage: "doc.on.doc")
+                        }
+                    }
+                }
+                if allOrdersHasMore {
+                    Button {
+                        Task { await loadAllOrders(next: true) }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if allOrdersLoading { ProgressView().scaleEffect(0.8) }
+                            Text("加载更多").font(.footnote)
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+            }
+        }
+        .task {
+            if allOrders.isEmpty { await reloadAllOrders() }
+        }
+    }
+
+    @MainActor
+    private func reloadAllOrders() async {
+        allOrdersPage = 1
+        allOrdersHasMore = true
+        allOrders = []
+        await loadAllOrders(next: false)
+    }
+
+    @MainActor
+    private func loadAllOrders(next: Bool) async {
+        guard !allOrdersLoading else { return }
+        allOrdersLoading = true
+        defer { allOrdersLoading = false }
+        do {
+            let page = try await APIClient.shared.orders(
+                page: next ? allOrdersPage + 1 : 1,
+                pageSize: 20,
+                status: statusFilter.isEmpty ? nil : statusFilter
+            )
+            allOrdersPage = next ? allOrdersPage + 1 : 1
+            allOrders = next ? allOrders + page.data : page.data
+            allOrdersHasMore = allOrders.count < page.total && !page.data.isEmpty
+        } catch {
+            errorText = (error as? APIError)?.message ?? error.localizedDescription
         }
     }
 
