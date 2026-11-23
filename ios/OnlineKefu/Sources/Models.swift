@@ -283,3 +283,40 @@ struct ConsultItem: Decodable {
         quantity = try? c.decodeIfPresent(String.self, forKey: .quantity)
     }
 }
+
+
+// MARK: - 会话订单状态标签（后端只读本地库，不触发闲鱼接口）
+
+struct ConversationOrderTag: Decodable {
+    let accountId: String
+    let buyerId: String
+    let chatId: String
+    let status: String
+    let orderNo: String
+    let placedAt: String
+    let orderCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case accountId = "account_id"
+        case buyerId = "buyer_id"
+        case chatId = "chat_id"
+        case status
+        case orderNo = "order_no"
+        case placedAt = "placed_at"
+        case orderCount = "order_count"
+    }
+
+    /// 会话列表里的中文文案（对齐网页端）
+    var chatLabel: String {
+        switch status {
+        case "refunding": return "买家申请退款"
+        case "refunded": return "已退款"
+        case "pending_payment": return "待付款"
+        case "pending_ship", "pending", "paid": return "待发货"
+        case "shipped": return "已发货"
+        case "completed": return "交易成功"
+        case "cancelled": return "交易关闭"
+        default: return status
+        }
+    }
+}
