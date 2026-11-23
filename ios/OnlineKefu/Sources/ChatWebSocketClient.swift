@@ -9,7 +9,6 @@ import Foundation
 /// 正确做法是跟网页端一样走推送：后端 `/api/v1/chat-new/ws/{account_id}?token=...`
 /// 收到买家消息会实时下发 `{"event":"new_message","cid":...,"message":{...}}`。
 /// 这里负责：连接、心跳、断线指数退避重连、把事件回调给上层。
-@MainActor
 final class ChatWebSocketClient {
     enum Event {
         case connected
@@ -78,18 +77,18 @@ final class ChatWebSocketClient {
     }
 
     private func startPing() {
+        dispatchPrecondition(condition: .onQueue(.main))
         pingTimer?.invalidate()
         pingTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let task = self.task else { return }
-                task.send(.string(#"{"type":"ping"}"#)) { _ in }
-            }
+            guard let self, let task = self.task else { return }
+            task.send(.string(#"{"type":"ping"}"#)) { _ in }
         }
     }
 
     private func receive() {
         task?.receive { [weak self] result in
-            Task { @MainActor in
+            // URLSession 回调在后台线程，统一切到主线程处理状态
+            DispatchQueue.main.async {
                 guard let self else { return }
                 switch result {
                 case .success(let message):
@@ -146,10 +145,8 @@ final class ChatWebSocketClient {
         // 指数退避：2/4/8/16/30 秒，避免后端挂了还在疯狂重连
         let delay = min(30, pow(2.0, Double(min(attempt, 5))))
         let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                guard let self, let url = self.serverURL, !self.accountId.isEmpty else { return }
-                self.connect(serverURL: url, accountId: self.accountId, token: self.token)
-            }
+            guard let self, let url = self.serverURL, !self.accountId.isEmpty else { return }
+            self.connect(serverURL: url, accountId: self.accountId, token: self.token)
         }
         reconnectWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
