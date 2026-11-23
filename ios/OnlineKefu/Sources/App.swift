@@ -30,6 +30,7 @@ struct RootView: View {
 
 struct MainTabView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $state.selectedTab) {
@@ -50,8 +51,15 @@ struct MainTabView: View {
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
                 .tag(AppTab.settings)
         }
-        // 不在这里轮询：`/conversations` 会实时打闲鱼接口，20 秒一轮会拖慢甚至触发平台风控
-        // （2026-11-22 1.3.0 装上后"其它功能全部报错"）。刷新交给：进页面 / 下拉 / 手动刷新。
+        // 实时消息走 WebSocket（后端推送），不是轮询：
+        // `/conversations` 是实时打闲鱼的接口，高频轮询会把整站拖垮（1.3.0 的教训）。
+        .onAppear { state.startRealtime() }
+        .onChange(of: state.selectedAccount?.accountId) { _ in state.startRealtime() }
+        // 回前台立刻重连并补齐消息；进后台释放连接（iOS 会挂起进程，留着也没用）
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { state.startRealtime() }
+            else if phase == .background { state.stopRealtime() }
+        }
     }
 }
 
