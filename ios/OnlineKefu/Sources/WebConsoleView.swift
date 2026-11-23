@@ -68,6 +68,13 @@ struct WebConsoleView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .onAppear {
+            // 首次创建 WebView 时也要处理"跳转请求"（例如从会话信息点"订单管理"）
+            if let path = pendingPath, !path.isEmpty {
+                model.load(path: path, serverURL: serverURL)
+                _ = state.consumePendingWebPath()
+            }
+        }
         .onChange(of: pendingPath) { path in
             guard let path, !path.isEmpty else { return }
             model.load(path: path, serverURL: serverURL)
@@ -152,6 +159,16 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                              cachePolicy: .reloadIgnoringLocalCacheData,
                              timeoutInterval: 30)
         wv.load(req)
+        // 有挂起的跳转（例如从会话信息点"订单管理"，此时 WebView 刚创建）→ 直接打开目标页
+        if let deferred = deferredPath, let url = URL(string: deferred, relativeTo: serverURL) {
+            var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            var items = comps?.queryItems ?? []
+            items.removeAll { $0.name == "app_embed" }
+            items.append(URLQueryItem(name: "app_embed", value: "1"))
+            comps?.queryItems = items
+            if let target = comps?.url { wv.load(URLRequest(url: target)) }
+            deferredPath = nil
+        }
         return wv
     }
 
@@ -193,8 +210,16 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     }
     func goHome(_ url: URL) { webView?.load(URLRequest(url: url)) }
 
+    /// 待加载的站内路径（WebView 还没创建时先存着，见 ensureWebView）
+    private var deferredPath: String?
+
     /// 打开站内指定路由（自动带上 app_embed=1，保持"去壳"模式）
     func load(path: String, serverURL: URL) {
+        guard webView != nil else {
+            deferredPath = path      // WebView 可能还没创建（Tab 首次进入）
+            return
+        }
+        defer { deferredPath = nil }
         var comps = URLComponents(url: URL(string: path, relativeTo: serverURL) ?? serverURL,
                                   resolvingAgainstBaseURL: false)
         var items = comps?.queryItems ?? []
