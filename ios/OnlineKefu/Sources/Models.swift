@@ -98,8 +98,11 @@ struct Conversation: Decodable, Identifiable, Hashable {
     var lastMessageSummary: String
     var lastMessageTime: Double
     var unreadCount: Int
+    /// 所属账号（多账号聚合视图必需；后端不返回，由客户端注入）
+    var accountId: String = ""
+    var accountName: String = ""
 
-    var id: String { cid }
+    var id: String { "\(accountId)|\(cid)" }
 
     enum CodingKeys: String, CodingKey {
         case cid, rawCid, otherUserId, otherUserName, otherUserAvatar
