@@ -99,6 +99,15 @@ struct WorkspaceSheet: View {
         .task { await load() }
     }
 
+    /// 跳到网页版在线聊天的指定工作区面板（带账号/会话，落地即对）
+    private func openWebWorkspace(work: String) {
+        let acc = (state.selectedAccount?.accountId ?? "")
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let cid = conversation.cid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        state.openInWeb("/online-chat-new?account_id=\(acc)&cid=\(cid)&tab=tools&work=\(work)")
+        dismiss()
+    }
+
     // MARK: - 快捷短语
 
     private var phrasesSection: some View {
@@ -186,8 +195,7 @@ struct WorkspaceSheet: View {
                         }
                     }
                     Button {
-                        state.openInWeb("/items")
-                        dismiss()
+                        openWebWorkspace(work: "consult")
                     } label: {
                         Label("去商品管理（改价/库存/下架）", systemImage: "square.and.pencil")
                             .font(.footnote)
@@ -272,9 +280,8 @@ struct WorkspaceSheet: View {
             } else {
                 ForEach(allOrders) { o in
                     Button {
-                        // 订单详情目前只有网页版有：直接跳订单管理（同一套登录态）
-                        state.openInWeb("/orders")
-                        dismiss()
+                        // 订单详情/操作只有网页版完整：跳到网页工作区的订单面板
+                        openWebWorkspace(work: "allOrders")
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
@@ -362,18 +369,39 @@ struct WorkspaceSheet: View {
         }
     }
 
-    // MARK: - 更多功能（跳网页版）
+    // MARK: - 更多功能（跳网页版工作区）
 
     private var moreSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("更多功能").font(.caption).foregroundColor(.secondary)
+            Text("网页版工作区（可操作发货/退款/改价）").font(.caption).foregroundColor(.secondary)
             HStack(spacing: 8) {
-                miniEntry("订单管理", "shippingbox", "/orders")
+                workspaceEntry("买家订单", "shippingbox", "orders")
+                workspaceEntry("咨询商品", "tag", "consult")
+                workspaceEntry("所有订单", "list.bullet.rectangle", "allOrders")
+            }
+            HStack(spacing: 8) {
+                miniEntry("订单管理", "doc.text.magnifyingglass", "/orders")
                 miniEntry("商品管理", "square.grid.2x2", "/items")
                 miniEntry("智能客服", "sparkles", "/cs-agent")
             }
         }
         .padding(.top, 4)
+    }
+
+    private func workspaceEntry(_ title: String, _ icon: String, _ work: String) -> some View {
+        Button {
+            openWebWorkspace(work: work)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 16))
+                Text(title).font(.caption2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Theme.accent.opacity(0.10))
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
     }
 
     private func miniEntry(_ title: String, _ icon: String, _ path: String) -> some View {
