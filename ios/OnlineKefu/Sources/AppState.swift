@@ -276,6 +276,17 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 占位会话补全（去抖：3 秒内最多一次）
+    private var lastCorrectionAt = Date.distantPast
+    private func scheduleListCorrection() {
+        guard Date().timeIntervalSince(lastCorrectionAt) > 3 else { return }
+        lastCorrectionAt = Date()
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await self?.silentRefresh()
+        }
+    }
+
     /// 收到一条推送：更新会话列表 / 当前聊天 / 未读 / 通知
     private func applyIncoming(cid: String, message msg: ChatMessage) {
         let summary = msg.type == "image" ? "[图片]" : String(msg.text.prefix(60))
@@ -291,6 +302,20 @@ final class AppState: ObservableObject {
             // 有新消息的会话排到最前
             let conv = conversations.remove(at: idx)
             conversations.insert(conv, at: 0)
+        } else if !msg.isSelf {
+            // 列表里还没有这个会话（新买家第一条消息）——**必须插进去**，
+            // 否则推送到了也只更新不到任何行，表现为"消息不同步"（2026-11-23 实锤）。
+            let placeholder = Conversation(
+                cid: cid,
+                otherUserId: msg.senderId,
+                otherUserName: msg.senderName.isEmpty ? "新买家" : msg.senderName,
+                lastMessageSummary: summary.isEmpty ? "新消息" : summary,
+                lastMessageTime: msg.time,
+                unreadCount: viewing ? 0 : 1
+            )
+            conversations.insert(placeholder, at: 0)
+            // 占位信息不全（头像/商品），1.5 秒后补拉一次真实列表校正；3 秒内只跑一次
+            scheduleListCorrection()
         }
 
         if viewing {
