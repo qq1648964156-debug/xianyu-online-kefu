@@ -13,6 +13,8 @@ final class AppState: ObservableObject {
     @Published var username: String? = AppSettings.username
     @Published var accounts: [ChatAccount] = []
     @Published var selectedAccount: ChatAccount?
+    /// 消息页是否把所有账号的会话聚合在一起（默认开启，对齐网页版"全部账号"）
+    @Published var allAccountsMode = true
     @Published var conversations: [Conversation] = []
     @Published var messages: [ChatMessage] = []
     @Published var quickPhrases: [QuickPhrase] = []
@@ -32,6 +34,8 @@ final class AppState: ObservableObject {
     @Published var realtimeConnected = false
     /// 当前正在看的会话（收到推送时判断要不要追加到聊天窗口）
     @Published var viewingCID: String?
+    /// 正在看的会话属于哪个账号（聚合模式下同一 cid 可能存在于多个账号）
+    @Published var viewingAccountId: String?
     /// 会话 → 订单状态标签（key: "账号|买家ID" 与 "账号|#会话ID"）
     @Published var orderTags: [String: ConversationOrderTag] = [:]
     private var tagTimer: Timer?
@@ -135,21 +139,32 @@ final class AppState: ObservableObject {
     /// （2026-11-23 用户反馈"气泡一刷新就出来"）。
     /// `latestMessageTime` 用进入会话后真正加载到的最新消息时间，避免列表里的时间戳偏旧。
     func markRead(_ conversation: Conversation, latestMessageTime: Double? = nil) {
-        guard let account = selectedAccount else { return }
+        let aid = accountId(for: conversation)
+        guard !aid.isEmpty else { return }
         let time = max(conversation.lastMessageTime, latestMessageTime ?? 0)
-        ReadStore.mark(account: account.accountId, cid: conversation.cid,
+        ReadStore.mark(account: aid, cid: conversation.cid,
                        time: time, summary: conversation.lastMessageSummary)
-        if let idx = conversations.firstIndex(where: { $0.cid == conversation.cid }),
+        if let idx = conversations.firstIndex(where: { $0.cid == conversation.cid && $0.accountId == aid }),
            conversations[idx].unreadCount > 0 {
             conversations[idx].unreadCount = 0
             NotificationManager.shared.updateBadge(totalUnread)
         }
     }
 
+    /// 会话所属账号（聚合模式下以会话自带 accountId 为准）
+    func accountId(for conversation: Conversation) -> String {
+        conversation.accountId.isEmpty ? (selectedAccount?.accountId ?? "") : conversation.accountId
+    }
+
+    private func accountName(for accountId: String) -> String {
+        accounts.first(where: { $0.accountId == accountId })?.displayName ?? accountId
+    }
+
     /// 渲染层判断：这个会话是否已读（不依赖刷新流程是否执行过 apply）
     func isRead(_ conversation: Conversation) -> Bool {
-        guard let account = selectedAccount else { return false }
-        return ReadStore.isRead(account: account.accountId, cid: conversation.cid,
+        let aid = accountId(for: conversation)
+        guard !aid.isEmpty else { return false }
+        return ReadStore.isRead(account: aid, cid: conversation.cid,
                                 time: conversation.lastMessageTime,
                                 summary: conversation.lastMessageSummary)
     }
@@ -232,23 +247,31 @@ final class AppState: ObservableObject {
 
     // MARK: - 实时推送（WebSocket）
 
-    private static var wsClient: ChatWebSocketClient?
+    /// 每个账号一条 WS（聚合模式下要同时收所有账号的消息）
+    private var wsClients: [String: ChatWebSocketClient] = [:]
 
-    /// 建立实时通道（切账号 / 回前台时调用）
+    /// 建立实时通道：为所有启用账号各连一条（对齐网页版"全部账号"）
     func startRealtime() {
-        guard let account = selectedAccount, let token, !token.isEmpty else { return }
+        guard let token, !token.isEmpty else { return }
+        var targets = accounts.filter { $0.status == "active" }.map(\.accountId)
+        if targets.isEmpty, let only = selectedAccount?.accountId { targets = [only] }
+        guard !targets.isEmpty else { return }
+
         lastConnectAttempt = Date()
-        let client = AppState.wsClient ?? {
-            let c = ChatWebSocketClient()
-            AppState.wsClient = c
-            return c
-        }()
-        client.onEvent = { [weak self] event in
-            guard let self else { return }
-            if Thread.isMainThread { self.handleRealtime(event) }
-            else { DispatchQueue.main.async { self.handleRealtime(event) } }
+        for aid in targets {
+            if let existing = wsClients[aid], existing.isConnected { continue }
+            let client = wsClients[aid] ?? {
+                let c = ChatWebSocketClient()
+                wsClients[aid] = c
+                return c
+            }()
+            client.onEvent = { [weak self] event in
+                guard let self else { return }
+                if Thread.isMainThread { self.handleRealtime(event, accountId: aid) }
+                else { DispatchQueue.main.async { self.handleRealtime(event, accountId: aid) } }
+            }
+            client.connect(serverURL: AppSettings.serverURL, accountId: aid, token: token)
         }
-        client.connect(serverURL: AppSettings.serverURL, accountId: account.accountId, token: token)
         startFallbackTimer()
     }
 
@@ -266,15 +289,18 @@ final class AppState: ObservableObject {
             token = api.token
             AppSettings.token = api.token
         }
-        guard let account = selectedAccount else { return }
         lastConnectAttempt = Date()
-        AppState.wsClient?.connect(serverURL: AppSettings.serverURL,
-                                   accountId: account.accountId,
-                                   token: token ?? "")
+        let ids = wsClients.keys.isEmpty
+            ? (selectedAccount.map { [$0.accountId] } ?? [])
+            : Array(wsClients.keys)
+        for aid in ids {
+            wsClients[aid]?.connect(serverURL: AppSettings.serverURL, accountId: aid, token: token ?? "")
+        }
     }
 
     func stopRealtime() {
-        AppState.wsClient?.disconnect(byUser: true)
+        wsClients.values.forEach { $0.disconnect(byUser: true) }
+        wsClients.removeAll()
         realtimeConnected = false
         fallbackTimer?.invalidate()
         fallbackTimer = nil
@@ -292,7 +318,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func handleRealtime(_ event: ChatWebSocketClient.Event) {
+    private func handleRealtime(_ event: ChatWebSocketClient.Event, accountId: String) {
         switch event {
         case .connected:
             realtimeConnected = true
@@ -304,7 +330,7 @@ final class AppState: ObservableObject {
                 Task { await refreshTokenAndReconnect() }
             }
         case .newMessage(let cid, let msg):
-            applyIncoming(cid: cid, message: msg)
+            applyIncoming(cid: cid, message: msg, accountId: accountId)
         }
     }
 
@@ -320,12 +346,11 @@ final class AppState: ObservableObject {
     }
 
     /// 收到一条推送：更新会话列表 / 当前聊天 / 未读 / 通知
-    private func applyIncoming(cid: String, message msg: ChatMessage) {
+    private func applyIncoming(cid: String, message msg: ChatMessage, accountId: String) {
         let summary = msg.type == "image" ? "[图片]" : String(msg.text.prefix(60))
-        let accountId = selectedAccount?.accountId ?? ""
-        let viewing = (viewingCID == cid)
+        let viewing = (viewingCID == cid && (viewingAccountId == nil || viewingAccountId == accountId))
 
-        if let idx = conversations.firstIndex(where: { $0.cid == cid }) {
+        if let idx = conversations.firstIndex(where: { $0.cid == cid && $0.accountId == accountId }) {
             conversations[idx].lastMessageSummary = summary.isEmpty ? "新消息" : summary
             conversations[idx].lastMessageTime = msg.time
             if !msg.isSelf && !viewing {
@@ -337,7 +362,7 @@ final class AppState: ObservableObject {
         } else if !msg.isSelf {
             // 列表里还没有这个会话（新买家第一条消息）——**必须插进去**，
             // 否则推送到了也只更新不到任何行，表现为"消息不同步"（2026-11-23 实锤）。
-            let placeholder = Conversation(
+            var placeholder = Conversation(
                 cid: cid,
                 otherUserId: msg.senderId,
                 otherUserName: msg.senderName.isEmpty ? "新买家" : msg.senderName,
@@ -345,6 +370,8 @@ final class AppState: ObservableObject {
                 lastMessageTime: msg.time,
                 unreadCount: viewing ? 0 : 1
             )
+            placeholder.accountId = accountId
+            placeholder.accountName = accountName(for: accountId)
             conversations.insert(placeholder, at: 0)
             // 占位信息不全（头像/商品），1.5 秒后补拉一次真实列表校正；3 秒内只跑一次
             scheduleListCorrection()
@@ -416,13 +443,52 @@ final class AppState: ObservableObject {
     }
 
     func reloadConversations() async {
-        guard let account = selectedAccount else { return }
         loadingConversations = true
         convCursor = nil
         defer { loadingConversations = false }
+
+        if allAccountsMode {
+            // 聚合：并发拉所有启用账号的首屏会话，按时间合并（对齐网页版"全部账号"）
+            let targets = accounts.filter { $0.status == "active" }
+            guard !targets.isEmpty else { return }
+            var merged: [Conversation] = []
+            await withTaskGroup(of: (String, String, [Conversation]).self) { group in
+                for acc in targets {
+                    group.addTask { [api] in
+                        do {
+                            let page = try await api.conversations(accountId: acc.accountId, cursor: nil)
+                            return (acc.accountId, acc.displayName, page.conversations)
+                        } catch {
+                            return (acc.accountId, acc.displayName, [])
+                        }
+                    }
+                }
+                for await (aid, name, list) in group {
+                    for var c in list {
+                        c.accountId = aid
+                        c.accountName = name
+                        merged.append(c)
+                    }
+                }
+            }
+            merged.sort { $0.lastMessageTime > $1.lastMessageTime }
+            // 按账号分组套用本地已读水位
+            var out: [Conversation] = []
+            for group in Dictionary(grouping: merged, by: { $0.accountId }) {
+                out += ReadStore.apply(account: group.key, conversations: group.value)
+            }
+            conversations = out.sorted { $0.lastMessageTime > $1.lastMessageTime }
+            NotificationManager.shared.handleConversations(conversations,
+                                                           accountName: "全部账号")
+            await refreshOrderTags()
+            startTagTimer()
+            return
+        }
+
+        guard let account = selectedAccount else { return }
         do {
             let page = try await api.conversations(accountId: account.accountId, cursor: nil)
-            conversations = page.conversations
+            conversations = ReadStore.apply(account: account.accountId, conversations: page.conversations)
             convCursor = page.nextCursor
             NotificationManager.shared.handleConversations(conversations,
                                                            accountName: account.displayName)
@@ -432,7 +498,7 @@ final class AppState: ObservableObject {
     }
 
     func loadMoreConversations() async {
-        guard let account = selectedAccount, let cursor = convCursor else { return }
+        guard !allAccountsMode, let account = selectedAccount, let cursor = convCursor else { return }
         do {
             let page = try await api.conversations(accountId: account.accountId, cursor: cursor)
             conversations += ReadStore.apply(account: account.accountId, conversations: page.conversations)
@@ -443,7 +509,8 @@ final class AppState: ObservableObject {
     }
 
     func loadMessages(conversation: Conversation, reset: Bool = true) async {
-        guard let account = selectedAccount else { return }
+        let accountIdValue = accountId(for: conversation)
+        guard !accountIdValue.isEmpty else { return }
         if reset {
             loadingMessages = true
             msgCid = conversation.cid
@@ -452,7 +519,7 @@ final class AppState: ObservableObject {
         }
         defer { loadingMessages = false }
         do {
-            let page = try await api.messages(accountId: account.accountId,
+            let page = try await api.messages(accountId: accountIdValue,
                                               cid: conversation.cid,
                                               cursor: reset ? nil : msgCursor)
             if reset {
@@ -472,14 +539,15 @@ final class AppState: ObservableObject {
     }
 
     func send(text: String, to conversation: Conversation) async {
-        guard let account = selectedAccount, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let aid = accountId(for: conversation)
+        guard !aid.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         sending = true
         defer { sending = false }
         // 乐观插入，失败再标红（对齐网页端体验）
         let local = ChatMessage.placeholder(text: text)
         messages.append(local)
         do {
-            try await api.sendMessage(accountId: account.accountId,
+            try await api.sendMessage(accountId: aid,
                                       cid: conversation.cid,
                                       toUserId: conversation.otherUserId,
                                       text: text)
