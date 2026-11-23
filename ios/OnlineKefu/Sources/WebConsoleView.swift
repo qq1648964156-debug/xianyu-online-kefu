@@ -17,6 +17,7 @@ struct WebConsoleView: View {
     let username: String?
     /// 跨 tab 跳转：例如从会话信息点"订单管理"→ 网页版 /orders
     let pendingPath: String?
+    let pendingQuery: [String: String]
 
     @EnvironmentObject var state: AppState
     @StateObject private var model = WebViewModel()
@@ -71,13 +72,13 @@ struct WebConsoleView: View {
         .onAppear {
             // 首次创建 WebView 时也要处理"跳转请求"（例如从会话信息点"订单管理"）
             if let path = pendingPath, !path.isEmpty {
-                model.load(path: path, serverURL: serverURL)
+                model.load(path: path, query: pendingQuery, serverURL: serverURL)
                 _ = state.consumePendingWebPath()
             }
         }
         .onChange(of: pendingPath) { path in
             guard let path, !path.isEmpty else { return }
-            model.load(path: path, serverURL: serverURL)
+            model.load(path: path, query: pendingQuery, serverURL: serverURL)
             _ = state.consumePendingWebPath()
         }
     }
@@ -160,14 +161,11 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                              timeoutInterval: 30)
         wv.load(req)
         // 有挂起的跳转（例如从会话信息点"订单管理"，此时 WebView 刚创建）→ 直接打开目标页
-        if let deferred = deferredPath, let url = URL(string: deferred, relativeTo: serverURL) {
-            var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            var items = comps?.queryItems ?? []
-            items.removeAll { $0.name == "app_embed" }
-            items.append(URLQueryItem(name: "app_embed", value: "1"))
-            comps?.queryItems = items
-            if let target = comps?.url { wv.load(URLRequest(url: target)) }
+        if let deferred = deferredPath,
+           let target = Self.buildURL(path: deferred, query: deferredQuery, serverURL: serverURL) {
+            wv.load(URLRequest(url: target))
             deferredPath = nil
+            deferredQuery = [:]
         }
         return wv
     }
@@ -208,25 +206,40 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             }
         }
     }
+    /// 组装站内 URL：base(serverURL) + path + queryItems(+app_embed)
+    static func buildURL(path: String, query: [String: String], serverURL: URL) -> URL? {
+        guard var comps = URLComponents(url: serverURL, resolvingAgainstBaseURL: false) else { return nil }
+        var base = comps.path
+        if base.hasSuffix("/") { base.removeLast() }
+        let suffix = path.hasPrefix("/") ? path : "/" + path
+        comps.path = base + suffix
+        var items = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        items.removeAll { $0.name == "app_embed" }
+        items.append(URLQueryItem(name: "app_embed", value: "1"))
+        comps.queryItems = items
+        return comps.url
+    }
+
     func goHome(_ url: URL) { webView?.load(URLRequest(url: url)) }
 
     /// 待加载的站内路径（WebView 还没创建时先存着，见 ensureWebView）
     private var deferredPath: String?
+    private var deferredQuery: [String: String] = [:]
 
     /// 打开站内指定路由（自动带上 app_embed=1，保持"去壳"模式）
-    func load(path: String, serverURL: URL) {
+    ///
+    /// 路径与查询参数分开传：**不要**在外面手写百分号编码，
+    /// 统一交给 URLComponents 处理（中文账号名手写编码极易出错 → 页面加载失败报"网络错误"）。
+    func load(path: String, query: [String: String], serverURL: URL) {
         guard webView != nil else {
             deferredPath = path      // WebView 可能还没创建（Tab 首次进入）
+            deferredQuery = query
             return
         }
         defer { deferredPath = nil }
-        var comps = URLComponents(url: URL(string: path, relativeTo: serverURL) ?? serverURL,
-                                  resolvingAgainstBaseURL: false)
-        var items = comps?.queryItems ?? []
-        items.removeAll { $0.name == "app_embed" }
-        items.append(URLQueryItem(name: "app_embed", value: "1"))
-        comps?.queryItems = items
-        if let url = comps?.url { webView?.load(URLRequest(url: url)) }
+        if let url = Self.buildURL(path: path, query: query, serverURL: serverURL) {
+            webView?.load(URLRequest(url: url))
+        }
     }
 
     // MARK: - WKNavigationDelegate
