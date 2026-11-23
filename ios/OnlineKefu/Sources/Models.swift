@@ -95,8 +95,8 @@ struct Conversation: Decodable, Identifiable, Hashable {
     let otherUserAvatar: String
     let itemTitle: String
     let itemId: String?
-    let lastMessageSummary: String
-    let lastMessageTime: Double
+    var lastMessageSummary: String
+    var lastMessageTime: Double
     var unreadCount: Int
 
     var id: String { cid }
