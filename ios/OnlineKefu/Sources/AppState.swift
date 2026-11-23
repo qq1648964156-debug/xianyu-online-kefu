@@ -26,6 +26,8 @@ final class AppState: ObservableObject {
     @Published var selectedTab: AppTab = .messages
     /// 待网页版打开的路径（如 "/orders"），WebConsoleView 消费后清空
     @Published var pendingWebPath: String?
+    /// 深链查询参数（中文等由 URLComponents 统一编码，避免手写百分号出错）
+    @Published var pendingWebQuery: [String: String] = [:]
     /// 实时通道是否在线（WebSocket 连上 = true）
     @Published var realtimeConnected = false
     /// 当前正在看的会话（收到推送时判断要不要追加到聊天窗口）
@@ -161,13 +163,17 @@ final class AppState: ObservableObject {
     }
 
     /// 跳到「网页版」并打开指定路径（订单管理 / 商品管理 / 智能客服…）
-    func openInWeb(_ path: String) {
+    func openInWeb(_ path: String, query: [String: String] = [:]) {
+        pendingWebQuery = query
         pendingWebPath = path
         selectedTab = .web
     }
 
     func consumePendingWebPath() -> String? {
-        defer { pendingWebPath = nil }
+        defer {
+            pendingWebPath = nil
+            pendingWebQuery = [:]
+        }
         return pendingWebPath
     }
 
