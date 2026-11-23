@@ -94,6 +94,13 @@ struct ChatView: View {
         .onChange(of: speech.isRecording) { recording in
             if !recording { draftBeforeSpeech = "" }
         }
+        .onAppear {
+            state.viewingCID = conversation.cid
+            state.startRealtime()
+        }
+        .onDisappear {
+            if state.viewingCID == conversation.cid { state.viewingCID = nil }
+        }
         .task {
             state.markRead(conversation)          // 红点随打开消失，和网页端一致
             await state.loadMessages(conversation: conversation)
