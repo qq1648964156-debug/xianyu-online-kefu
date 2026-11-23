@@ -38,6 +38,13 @@ struct ConversationListView: View {
                         } label: {
                             Label("刷新", systemImage: "arrow.clockwise")
                         }
+                        Divider()
+                        // 原生缺的功能（群屏蔽/工作区深度操作）可以一键切到网页版在线聊天
+                        Button {
+                            state.openInWeb("/online-chat-new")
+                        } label: {
+                            Label("用网页版聊天", systemImage: "safari")
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
