@@ -225,6 +225,15 @@ final class APIClient {
         if r.success == false { throw APIError(message: r.message ?? "删除失败") }
     }
 
+    /// 会话列表的订单状态标签（后端只读本地订单库，安全可轮询）
+    func orderTags(accountIds: [String]) async throws -> [ConversationOrderTag] {
+        guard !accountIds.isEmpty else { return [] }
+        let ids = accountIds.joined(separator: ",")
+        let res: [ConversationOrderTag] = try await get("api/v1/chat-new/order-tags",
+                                                       query: ["account_ids": ids])
+        return res
+    }
+
     // MARK: - 会话信息（买家订单 / 咨询商品）
 
     func customerOrders(accountId: String, buyerId: String, chatId: String) async throws -> [CustomerOrder] {
