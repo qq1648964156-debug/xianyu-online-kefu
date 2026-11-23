@@ -43,7 +43,8 @@ struct MainTabView: View {
                            token: state.token,
                            refreshToken: state.refreshToken,
                            username: state.username,
-                           pendingPath: state.pendingWebPath)
+                           pendingPath: state.pendingWebPath,
+                           pendingQuery: state.pendingWebQuery)
                 .tabItem { Label("网页版", systemImage: "safari.fill") }
                 .tag(AppTab.web)
 
