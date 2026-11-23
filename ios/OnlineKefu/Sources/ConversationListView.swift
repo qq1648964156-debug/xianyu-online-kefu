@@ -13,7 +13,7 @@ struct ConversationListView: View {
                 }
                 content
             }
-            .navigationTitle(accountTitle)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -26,28 +26,27 @@ struct ConversationListView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            state.markAllRead()
-                        } label: {
-                            Label("全部标为已读", systemImage: "checkmark.circle")
-                        }
-                        Button {
-                            Task { await state.reloadAll() }
-                        } label: {
-                            Label("刷新", systemImage: "arrow.clockwise")
-                        }
-                        Divider()
-                        // 原生缺的功能（群屏蔽/工作区深度操作）可以一键切到网页版在线聊天
-                        Button {
-                            state.openInWeb("/online-chat-new")
-                        } label: {
-                            Label("用网页版聊天", systemImage: "safari")
-                        }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        Task { await state.reloadAll() }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "arrow.clockwise")
                     }
+                    .accessibilityLabel("刷新")
+
+                    Button {
+                        state.markAllRead()
+                    } label: {
+                        Image(systemName: "checkmark.circle")
+                    }
+                    .accessibilityLabel("全部标为已读")
+
+                    Button {
+                        state.openInWeb("/online-chat-new")
+                    } label: {
+                        Image(systemName: "safari")
+                    }
+                    .accessibilityLabel("网页版聊天")
                 }
             }
             .sheet(isPresented: $showAccountPicker) {
