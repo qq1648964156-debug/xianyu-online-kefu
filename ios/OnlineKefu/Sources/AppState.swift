@@ -26,6 +26,10 @@ final class AppState: ObservableObject {
     @Published var selectedTab: AppTab = .messages
     /// 待网页版打开的路径（如 "/orders"），WebConsoleView 消费后清空
     @Published var pendingWebPath: String?
+    /// 实时通道是否在线（WebSocket 连上 = true）
+    @Published var realtimeConnected = false
+    /// 当前正在看的会话（收到推送时判断要不要追加到聊天窗口）
+    @Published var viewingCID: String?
     private var errorDismissToken = 0
 
     private var convCursor: Int?
@@ -179,6 +183,89 @@ final class AppState: ObservableObject {
     /// 未读总数（角标用）
     var totalUnread: Int {
         conversations.reduce(0) { $0 + max(0, $1.unreadCount) }
+    }
+
+    // MARK: - 实时推送（WebSocket）
+
+    private static var wsClient: ChatWebSocketClient?
+
+    /// 建立实时通道（切账号 / 回前台时调用）
+    func startRealtime() {
+        guard let account = selectedAccount, let token, !token.isEmpty else { return }
+        let client = AppState.wsClient ?? {
+            let c = ChatWebSocketClient()
+            AppState.wsClient = c
+            return c
+        }()
+        client.onEvent = { [weak self] event in
+            guard let self else { return }
+            Task { @MainActor in self.handleRealtime(event) }
+        }
+        client.connect(serverURL: AppSettings.serverURL, accountId: account.accountId, token: token)
+        startFallbackTimer()
+    }
+
+    func stopRealtime() {
+        AppState.wsClient?.disconnect(byUser: true)
+        realtimeConnected = false
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+    }
+
+    /// 兜底轮询：只有实时通道断开时才跑，60 秒一次（1.3.0 的 20 秒轮询会把闲鱼接口压垮）
+    private var fallbackTimer: Timer?
+    private func startFallbackTimer() {
+        guard fallbackTimer == nil else { return }
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.realtimeConnected else { return }
+                await self.silentRefresh()
+            }
+        }
+    }
+
+    private func handleRealtime(_ event: ChatWebSocketClient.Event) {
+        switch event {
+        case .connected:
+            realtimeConnected = true
+            Task { await silentRefresh() }      // 补上断线期间可能漏掉的消息
+        case .disconnected:
+            realtimeConnected = false
+        case .newMessage(let cid, let msg):
+            applyIncoming(cid: cid, message: msg)
+        }
+    }
+
+    /// 收到一条推送：更新会话列表 / 当前聊天 / 未读 / 通知
+    private func applyIncoming(cid: String, message msg: ChatMessage) {
+        let summary = msg.type == "image" ? "[图片]" : String(msg.text.prefix(60))
+        let accountId = selectedAccount?.accountId ?? ""
+        let viewing = (viewingCID == cid)
+
+        if let idx = conversations.firstIndex(where: { $0.cid == cid }) {
+            conversations[idx].lastMessageSummary = summary.isEmpty ? "新消息" : summary
+            conversations[idx].lastMessageTime = msg.time
+            if !msg.isSelf && !viewing {
+                conversations[idx].unreadCount += 1
+            }
+            // 有新消息的会话排到最前
+            let conv = conversations.remove(at: idx)
+            conversations.insert(conv, at: 0)
+        }
+
+        if viewing {
+            if !messages.contains(where: { $0.messageId == msg.messageId }) {
+                messages.append(msg)
+            }
+            if !msg.isSelf, let conv = conversations.first(where: { $0.cid == cid }) {
+                markRead(conv, latestMessageTime: msg.time)
+            }
+        } else if !msg.isSelf {
+            NotificationManager.shared.handleConversations(conversations,
+                                                           accountName: selectedAccount?.displayName ?? "")
+            NotificationManager.shared.updateBadge(totalUnread)
+        }
+        _ = accountId
     }
 
     // MARK: - 数据加载
