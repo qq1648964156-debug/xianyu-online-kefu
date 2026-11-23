@@ -101,10 +101,13 @@ struct WorkspaceSheet: View {
 
     /// 跳到网页版在线聊天的指定工作区面板（带账号/会话，落地即对）
     private func openWebWorkspace(work: String) {
-        let acc = (state.selectedAccount?.accountId ?? "")
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let cid = conversation.cid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        state.openInWeb("/online-chat-new?account_id=\(acc)&cid=\(cid)&tab=tools&work=\(work)")
+        // 传原始中文，交给 URLComponents 编码（手写百分号会双重编码 → 页面报网络错误）
+        state.openInWeb("/online-chat-new", query: [
+            "account_id": state.selectedAccount?.accountId ?? "",
+            "cid": conversation.cid,
+            "tab": "tools",
+            "work": work,
+        ])
         dismiss()
     }
 
