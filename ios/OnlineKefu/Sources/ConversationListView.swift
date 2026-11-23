@@ -94,7 +94,8 @@ struct ConversationListView: View {
                     NavigationLink(destination: ChatView(conversation: conv)) {
                         ConversationRow(conversation: conv,
                                     isRead: state.isRead(conv),
-                                    orderTag: state.orderTag(for: conv))
+                                    orderTag: state.orderTag(for: conv),
+                                    showAccount: state.allAccountsMode)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onAppear {
@@ -117,6 +118,8 @@ struct ConversationRow: View {
     var isRead: Bool = false
     /// 买家订单状态（有订单才显示，对齐网页版"已发货/交易成功"标签）
     var orderTag: ConversationOrderTag?
+    /// 聚合视图下显示这条会话来自哪个账号
+    var showAccount: Bool = false
 
     private static func chipColor(_ status: String) -> Color {
         switch status {
@@ -139,6 +142,16 @@ struct ConversationRow: View {
                     Text(conversation.otherUserName.isEmpty ? "买家" : conversation.otherUserName)
                         .font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
+                    if showAccount, !conversation.accountName.isEmpty {
+                        Text(conversation.accountName)
+                            .font(.system(size: 10))
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .foregroundColor(.secondary)
+                            .background(Color(uiColor: .tertiarySystemFill))
+                            .cornerRadius(4)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
                     if let tag = orderTag {
                         Text(tag.chatLabel)
                             .font(.system(size: 10, weight: .medium))
