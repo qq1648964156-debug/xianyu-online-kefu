@@ -30,6 +30,45 @@ final class AppState: ObservableObject {
     @Published var realtimeConnected = false
     /// 当前正在看的会话（收到推送时判断要不要追加到聊天窗口）
     @Published var viewingCID: String?
+    /// 会话 → 订单状态标签（key: "账号|买家ID" 与 "账号|#会话ID"）
+    @Published var orderTags: [String: ConversationOrderTag] = [:]
+    private var tagTimer: Timer?
+
+    /// 取某个会话的订单标签（先按买家ID，再按会话ID兜底 —— 订单里的 chat_id 大量为空）
+    func orderTag(for conv: Conversation) -> ConversationOrderTag? {
+        guard let account = selectedAccount else { return nil }
+        if !conv.otherUserId.isEmpty,
+           let hit = orderTags["\(account.accountId)|\(conv.otherUserId)"] { return hit }
+        let normCid = conv.cid.split(separator: "@").first.map(String.init) ?? conv.cid
+        return orderTags["\(account.accountId)|#\(normCid)"]
+    }
+
+    /// 拉订单标签（后端只读本地库，60 秒一次也不打闲鱼）
+    func refreshOrderTags() async {
+        guard !accounts.isEmpty else { return }
+        do {
+            let ids = accounts.map(\.accountId)
+            let tags = try await api.orderTags(accountIds: ids)
+            var map: [String: ConversationOrderTag] = [:]
+            for t in tags {
+                if !t.buyerId.isEmpty { map["\(t.accountId)|\(t.buyerId)"] = t }
+                if !t.chatId.isEmpty {
+                    let norm = t.chatId.split(separator: "@").first.map(String.init) ?? t.chatId
+                    map["\(t.accountId)|#\(norm)"] = t
+                }
+            }
+            orderTags = map
+        } catch {
+            // 标签只是锦上添花，失败保持上一次结果
+        }
+    }
+
+    private func startTagTimer() {
+        guard tagTimer == nil else { return }
+        tagTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.refreshOrderTags() }
+        }
+    }
     private var errorDismissToken = 0
 
     private var convCursor: Int?
@@ -281,6 +320,8 @@ final class AppState: ObservableObject {
             convCursor = page.nextCursor
             NotificationManager.shared.handleConversations(conversations,
                                                            accountName: account.displayName)
+            await refreshOrderTags()
+            startTagTimer()
         } catch {
             // 后台刷新失败就算了，不打扰用户
         }
