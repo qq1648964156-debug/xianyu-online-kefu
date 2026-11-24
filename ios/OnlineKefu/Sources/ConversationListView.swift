@@ -67,10 +67,12 @@ struct ConversationListView: View {
 
     private var filtered: [Conversation] {
         let kw = keyword.trimmingCharacters(in: .whitespaces)
-        guard !kw.isEmpty else { return state.conversations }
-        return state.conversations.filter {
+        let base = kw.isEmpty ? state.conversations : state.conversations.filter {
             $0.otherUserName.contains(kw) || $0.lastMessageSummary.contains(kw) || $0.itemTitle.contains(kw)
         }
+        // 渲染前必须保证 id 唯一：SwiftUI 的 List diff 遇到重复 id 会直接崩
+        var seen = Set<String>()
+        return base.filter { seen.insert($0.id).inserted }
     }
 
     @ViewBuilder
