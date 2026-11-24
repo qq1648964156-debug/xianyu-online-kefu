@@ -174,7 +174,14 @@ struct ChatView: View {
     private func sendDraft() {
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        draft = ""
+
+        // ⚠️ 不能在这里同步清空：中文输入法在 onCommit 之后会把 markedText 回写，
+        // 表现就是"消息发出去了，输入框里还留着原文"（2026-11-24 用户反馈）。
+        // 推到下一个 runloop 再清，并只清"刚发出去的那条"，避免误删用户已经开始输入的新内容。
+        DispatchQueue.main.async {
+            if draft == text { draft = "" }
+        }
+
         Task { await state.send(text: text, to: conversation) }
     }
 
@@ -215,8 +222,10 @@ struct ChatView: View {
 
             HStack(alignment: .bottom, spacing: 8) {
                 // 不用 axis: .vertical（iOS 16+），保持 iOS 15 可编译
-                TextField("输入回复…", text: $draft, onCommit: sendDraft)
+                TextField("输入回复…", text: $draft)
                     .focused($focused)
+                    .submitLabel(.send)
+                    .onSubmit { sendDraft() }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .background(Color(uiColor: .secondarySystemBackground))
