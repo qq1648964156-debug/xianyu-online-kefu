@@ -449,7 +449,13 @@ final class AppState: ObservableObject {
 
         if allAccountsMode {
             // 聚合：并发拉所有启用账号的首屏会话，按时间合并（对齐网页版"全部账号"）
-            let targets = accounts.filter { $0.status == "active" }
+            // 账号去重：后端可能因"同一店铺多个 Cookie"返回重复 account_id，
+            // 重复拉取会让 merged 里出现同 (accountId,cid) 的两条 → SwiftUI 列表 diff 时
+            // id 重复直接崩（2026-11-24 用户反馈"点刷新闪退"）。这里先按 accountId 去重。
+            var seenAccounts = Set<String>()
+            let targets = accounts.filter {
+                $0.status == "active" && seenAccounts.insert($0.accountId).inserted
+            }
             guard !targets.isEmpty else { return }
             var merged: [Conversation] = []
             await withTaskGroup(of: (String, String, [Conversation]).self) { group in
@@ -471,6 +477,14 @@ final class AppState: ObservableObject {
                     }
                 }
             }
+            // 再按 (accountId, cid) 去重：同一会话只保留最后消息时间最新的那条
+            var unique: [String: Conversation] = [:]
+            for c in merged {
+                let key = "\(c.accountId)|\(c.cid)"
+                if let exist = unique[key], exist.lastMessageTime >= c.lastMessageTime { continue }
+                unique[key] = c
+            }
+            merged = Array(unique.values)
             merged.sort { $0.lastMessageTime > $1.lastMessageTime }
             // 按账号分组套用本地已读水位
             var out: [Conversation] = []
