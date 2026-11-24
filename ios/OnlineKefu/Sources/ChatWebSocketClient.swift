@@ -39,6 +39,16 @@ final class ChatWebSocketClient {
     // MARK: - 生命周期
 
     func connect(serverURL: URL, accountId: String, token: String) {
+        // ⚠️ 必须在主线程建连：startPing() 用 Timer.scheduledTimer 依赖主 RunLoop，
+        // 且有 dispatchPrecondition(.onQueue(.main)) 断言。
+        // refreshTokenAndReconnect 是在后台 Task 里调过来的 → 断言失败 → SIGTRAP 闪退
+        // （2026-11-24 崩溃日志实锤：_dispatchPreconditionTest → startPing → connect）。
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.connect(serverURL: serverURL, accountId: accountId, token: token)
+            }
+            return
+        }
         guard let url = Self.wsURL(serverURL: serverURL, accountId: accountId, token: token) else { return }
         // 同一个账号同一地址已连着就不重连（避免切页面反复建连）
         if isConnected, self.accountId == accountId, self.serverURL == serverURL { return }
@@ -56,6 +66,10 @@ final class ChatWebSocketClient {
     }
 
     func disconnect(byUser: Bool = true) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.disconnect(byUser: byUser) }
+            return
+        }
         if byUser { closedByUser = true }
         reconnectWork?.cancel(); reconnectWork = nil
         pingTimer?.invalidate(); pingTimer = nil
