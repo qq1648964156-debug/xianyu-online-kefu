@@ -33,8 +33,8 @@ targets:
       properties:
         CFBundleDisplayName: 在线客服
         CFBundleName: 在线客服
-        CFBundleShortVersionString: "1.9.5"
-        CFBundleVersion: "34"
+        CFBundleShortVersionString: "1.9.6"
+        CFBundleVersion: "35"
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageName: LaunchLogo
@@ -50,8 +50,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.xianyu.onlinekefu
-        MARKETING_VERSION: "1.9.5"
-        CURRENT_PROJECT_VERSION: "34"
+        MARKETING_VERSION: "1.9.6"
+        CURRENT_PROJECT_VERSION: "35"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
