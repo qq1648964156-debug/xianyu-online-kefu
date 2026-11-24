@@ -137,6 +137,30 @@ struct SettingsView: View {
                     ))
                 }
 
+                Section(header: Text("诊断"),
+                        footer: Text("App 崩溃（闪退）时会把类型和调用栈写进这里。把内容复制给我，能直接定位是哪个页面/哪一行崩的。")) {
+                    if let crash = CrashLogger.lastCrash() {
+                        Text(crash)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .lineLimit(12)
+                        Button {
+                            UIPasteboard.general.string = crash
+                        } label: {
+                            Label("复制崩溃日志", systemImage: "doc.on.doc")
+                        }
+                        Button(role: .destructive) {
+                            CrashLogger.clear()
+                        } label: {
+                            Text("清除日志")
+                        }
+                    } else {
+                        Text("没有崩溃记录")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 Section(header: Text("关于")) {
                     HStack {
                         Text("版本")
