@@ -5,6 +5,11 @@ struct OnlineKefuApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var state = AppState()
 
+    init() {
+        // 最早时机装崩溃钩子：Swift 致命错误走 signal，不会进 NSException
+        CrashLogger.install()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
