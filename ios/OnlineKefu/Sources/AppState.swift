@@ -457,24 +457,21 @@ final class AppState: ObservableObject {
                 $0.status == "active" && seenAccounts.insert($0.accountId).inserted
             }
             guard !targets.isEmpty else { return }
+            // ⚠️ 这里必须**串行**拉取：APIClient 是 class，token/baseURL 是可变属性，
+            // 用 withTaskGroup 并发调用同一个实例 = 多线程读写同一份可变状态（ARC 引用计数竞态），
+            // 会偶发 EXC_BAD_ACCESS 闪退（2026-11-24 用户"刷新就崩"）。
+            // 5 个账号串行拉一遍约 1~2 秒，换来的是绝对安全。
             var merged: [Conversation] = []
-            await withTaskGroup(of: (String, String, [Conversation]).self) { group in
-                for acc in targets {
-                    group.addTask { [api] in
-                        do {
-                            let page = try await api.conversations(accountId: acc.accountId, cursor: nil)
-                            return (acc.accountId, acc.displayName, page.conversations)
-                        } catch {
-                            return (acc.accountId, acc.displayName, [])
-                        }
-                    }
-                }
-                for await (aid, name, list) in group {
-                    for var c in list {
-                        c.accountId = aid
-                        c.accountName = name
+            for acc in targets {
+                do {
+                    let page = try await api.conversations(accountId: acc.accountId, cursor: nil)
+                    for var c in page.conversations {
+                        c.accountId = acc.accountId
+                        c.accountName = acc.displayName
                         merged.append(c)
                     }
+                } catch {
+                    continue    // 单个账号失败不影响其它账号
                 }
             }
             // 再按 (accountId, cid) 去重：同一会话只保留最后消息时间最新的那条
