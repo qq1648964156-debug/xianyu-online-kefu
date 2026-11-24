@@ -293,8 +293,11 @@ final class AppState: ObservableObject {
         let ids = wsClients.keys.isEmpty
             ? (selectedAccount.map { [$0.accountId] } ?? [])
             : Array(wsClients.keys)
-        for aid in ids {
-            wsClients[aid]?.connect(serverURL: AppSettings.serverURL, accountId: aid, token: token ?? "")
+        let tokenValue = token ?? ""
+        await MainActor.run {
+            for aid in ids {
+                wsClients[aid]?.connect(serverURL: AppSettings.serverURL, accountId: aid, token: tokenValue)
+            }
         }
     }
 
